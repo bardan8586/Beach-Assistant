@@ -1,0 +1,17 @@
+# Minimal dependencies for testing video input + detection
+
+# Computer Vision & Video Processing
+opencv-python==4.8.1.78
+
+# AI/ML - YOLOv8 Detection
+ultralytics==8.0.232
+torch==2.1.0
+torchvision==0.16.0
+
+# Tracking
+norfair==2.2.0
+
+# Core utilities
+numpy==1.24.3
+pillow==10.1.0
+

@@ -1,0 +1,197 @@
+# ============================================
+# Beach Assistant - Git Ignore
+# ============================================
+
+# -------------------- Python --------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+env/
+venv/
+ENV/
+.venv
+env.bak/
+venv.bak/
+
+# -------------------- AI Models (LARGE FILES) --------------------
+# YOLOv8 and other model files
+*.pt
+*.pth
+*.onnx
+*.weights
+*.h5
+*.pb
+*.tflite
+tests/models/*.pt
+tests/models/*.pth
+
+# -------------------- Test Data (LARGE FILES) --------------------
+# Video files
+tests/data/*.mp4
+tests/data/*.avi
+tests/data/*.mov
+tests/data/*.mkv
+tests/data/*.flv
+tests/data/*.wmv
+
+# Image sequences
+tests/data/*.jpg
+tests/data/*.jpeg
+tests/data/*.png
+
+# -------------------- Generated Data --------------------
+# Tracking logs
+tracking_log.csv
+*.csv
+
+# Heatmaps
+heatmaps/
+*.heatmap
+
+# Snapshots
+snapshots/
+alerts/
+
+# -------------------- Database --------------------
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# MongoDB data
+data/db/
+mongo-data/
+
+# -------------------- Logs --------------------
+*.log
+logs/
+*.log.*
+
+# -------------------- IDE & Editors --------------------
+# VS Code
+.vscode/
+.history/
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# -------------------- OS Files --------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+.Trash-*
+
+# -------------------- Environment Variables --------------------
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+
+# -------------------- Frontend (Node.js / React) --------------------
+# Dependencies
+node_modules/
+frontend/node_modules/
+frontend/.pnp
+frontend/.pnp.js
+
+# Build outputs
+frontend/build/
+frontend/dist/
+frontend/.next/
+frontend/out/
+
+# Misc
+frontend/.DS_Store
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# Logs
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# -------------------- Docker --------------------
+# Docker volumes
+docker/data/
+*.dockerignore.bak
+
+# -------------------- Testing --------------------
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# -------------------- Jupyter Notebooks --------------------
+.ipynb_checkpoints
+*.ipynb
+
+# -------------------- Documentation --------------------
+# Sphinx documentation
+docs/_build/
+
+# -------------------- Temporary Files --------------------
+tmp/
+temp/
+*.tmp
+*.bak
+*.backup
+
+# -------------------- System Files --------------------
+# Thumbnails
+*.thumb
+
+# ============================================
+# Keep These (Whitelist)
+# ============================================
+# Keep empty directories
+!tests/data/.gitkeep
+!tests/models/.gitkeep
