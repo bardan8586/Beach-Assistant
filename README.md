@@ -47,5 +47,9 @@ open http://localhost:3000
 
 ---
 
-For detailed architecture, see [ARCHITECTURE.md](./ARCHITECTURE.md)
+## 📚 Documentation
+
+- 📖 [Full Architecture Design](./docs/ARCHITECTURE.md)
+- 🔧 [Backend Implementation Plan](./docs/BACKEND_PLAN.md)
+- 🎨 [Frontend Implementation Plan](./docs/FRONTEND_PLAN.md)
 
