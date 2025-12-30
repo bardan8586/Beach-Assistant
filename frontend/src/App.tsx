@@ -1,112 +1,58 @@
 /**
  * Main App Component
  * ===================
- * Root component for Beach Safety Monitor dashboard
+ * Beach Safety Monitor Dashboard with Video Processing
  */
 
-import { useEffect } from 'react'
+import { useState } from 'react'
 import './index.css'
 
 // Components
-import Header from './components/Layout/Header'
 import StatsCard from './components/Stats/StatsCard'
-import VideoPlayer from './components/VideoFeed/VideoPlayer'
+import VideoUploader from './components/VideoUpload/VideoUploader'
+import VideoProcessor from './components/VideoFeed/VideoProcessor'
 import AlertPanel from './components/Alerts/AlertPanel'
 
-// Hooks & Services
-import { useAppStore } from './store/useAppStore'
-import { useWebSocket } from './hooks/useWebSocket'
-import { apiService } from './services/api'
-
 function App() {
-  const {
-    selectedCamera,
-    swimmers,
-    alerts,
-    isConnected,
-    showBoundingBoxes,
-    showHeatmap,
-    setSwimmers,
-    setAlerts,
-    setIsConnected,
-    updateSwimmers,
-    addAlert,
-    acknowledgeAlert: acknowledgeAlertInStore,
-  } = useAppStore()
+  const [videoFile, setVideoFile] = useState<File | null>(null)
+  const [activeTab, setActiveTab] = useState<'upload' | 'live'>('upload')
 
-  // WebSocket connection for real-time updates
-  const { isConnected: wsConnected } = useWebSocket({
-    cameraId: selectedCamera,
-    onMessage: (message) => {
-      switch (message.type) {
-        case 'swimmers':
-          updateSwimmers(message.data)
-          break
-        case 'alert':
-          addAlert(message.data)
-          break
-        default:
-          break
-      }
-    },
-  })
-
-  // Update connection status
-  useEffect(() => {
-    setIsConnected(wsConnected)
-  }, [wsConnected, setIsConnected])
-
-  // Fetch initial data on mount
-  useEffect(() => {
-    const fetchInitialData = async () => {
-      try {
-        const [swimmersData, alertsData] = await Promise.all([
-          apiService.getSwimmers(selectedCamera),
-          apiService.getAlerts({ camera_id: selectedCamera, status: 'active' }),
-        ])
-        setSwimmers(swimmersData)
-        setAlerts(alertsData)
-      } catch (error) {
-        console.error('Failed to fetch initial data:', error)
-      }
-    }
-
-    fetchInitialData()
-  }, [selectedCamera, setSwimmers, setAlerts])
-
-  // Handle alert acknowledgment
-  const handleAcknowledgeAlert = async (alertId: string) => {
-    try {
-      await apiService.acknowledgeAlert(alertId)
-      acknowledgeAlertInStore(alertId)
-    } catch (error) {
-      console.error('Failed to acknowledge alert:', error)
-    }
-  }
-
-  // Calculate statistics
-  const activeSwimmers = swimmers.filter((s) => s.status === 'active').length
-  const activeAlerts = alerts.filter((a) => a.status === 'active').length
-  const avgTimeInWater = swimmers.length > 0
-    ? Math.round(
-        swimmers.reduce((sum, s) => {
-          const timeInWater =
-            (new Date(s.last_seen).getTime() - new Date(s.first_seen).getTime()) / 1000
-          return sum + timeInWater
-        }, 0) / swimmers.length
-      )
-    : 0
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
+  // Mock stats (in real app, would come from API)
+  const stats = {
+    activeSwimmers: 0,
+    avgTime: '--:--',
+    totalAlerts: 0,
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
       {/* Header */}
-      <Header selectedCamera={selectedCamera} isConnected={isConnected} />
+      <header className="bg-white shadow-md border-b-2 border-primary-100">
+        <div className="px-6 py-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <div className="text-5xl">🏖️</div>
+              <div>
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-primary-600 to-blue-500 bg-clip-text text-transparent">
+                  Beach Safety Monitor
+                </h1>
+                <p className="text-sm text-gray-600 mt-1">
+                  AI-Powered Swimmer Detection & Tracking
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className="text-right">
+                <div className="text-sm text-gray-500">Status</div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-sm font-medium text-green-600">Online</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
 
       {/* Main Content */}
       <main className="container mx-auto px-6 py-8">
@@ -114,128 +60,132 @@ function App() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <StatsCard
             title="Active Swimmers"
-            value={activeSwimmers}
+            value={stats.activeSwimmers}
             icon="🏊"
             color="blue"
-            subtitle="Currently in water"
+            subtitle="Currently detected"
           />
           <StatsCard
             title="Avg Time in Water"
-            value={avgTimeInWater > 0 ? formatTime(avgTimeInWater) : '--:--'}
+            value={stats.avgTime}
             icon="⏱️"
             color="gray"
             subtitle="Per swimmer"
           />
           <StatsCard
-            title={activeAlerts > 0 ? 'Active Alerts' : 'All Clear'}
-            value={activeAlerts}
-            icon={activeAlerts > 0 ? '🚨' : '✅'}
-            color={activeAlerts > 0 ? 'red' : 'green'}
-            subtitle={activeAlerts > 0 ? 'Requires attention' : 'No alerts'}
+            title="Safety Status"
+            value={stats.totalAlerts === 0 ? '✅' : `${stats.totalAlerts}`}
+            icon={stats.totalAlerts > 0 ? '🚨' : '✅'}
+            color={stats.totalAlerts > 0 ? 'red' : 'green'}
+            subtitle={stats.totalAlerts > 0 ? 'Active alerts' : 'All clear'}
           />
         </div>
 
-        {/* Main Grid: Video + Alerts */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Video Feed - Takes 2 columns */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-semibold mb-4 flex items-center">
-                <span className="mr-2">📹</span>
-                Live Feed - {selectedCamera}
-              </h2>
-              <VideoPlayer
-                swimmers={swimmers}
-                showBoundingBoxes={showBoundingBoxes}
-                showHeatmap={showHeatmap}
-                cameraId={selectedCamera}
-              />
-            </div>
+        {/* Tab Navigation */}
+        <div className="bg-white rounded-t-lg shadow-sm border-b">
+          <div className="flex space-x-1 p-1">
+            <button
+              onClick={() => setActiveTab('upload')}
+              className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
+                activeTab === 'upload'
+                  ? 'bg-primary-600 text-white'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              📁 Upload & Process Video
+            </button>
+            <button
+              onClick={() => setActiveTab('live')}
+              className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
+                activeTab === 'live'
+                  ? 'bg-primary-600 text-white'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              📹 Live Camera Feed
+            </button>
+          </div>
+        </div>
 
-            {/* Connection Info */}
-            <div className="mt-4">
-              {isConnected ? (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-green-600">✅</span>
-                    <div>
-                      <p className="text-sm text-green-900 font-medium">
-                        Connected to Backend
-                      </p>
-                      <p className="text-xs text-green-700 mt-1">
-                        Receiving real-time updates via WebSocket
-                      </p>
-                    </div>
+        {/* Main Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Video Section - Takes 2 columns */}
+          <div className="lg:col-span-2 bg-white rounded-b-lg shadow-lg p-6">
+            {activeTab === 'upload' ? (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-xl font-semibold mb-2 flex items-center">
+                    <span className="mr-2">🎥</span>
+                    Upload Video for AI Analysis
+                  </h2>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Upload a beach video to detect and track swimmers automatically
+                  </p>
+                </div>
+                
+                {!videoFile ? (
+                  <VideoUploader onVideoSelected={setVideoFile} />
+                ) : (
+                  <VideoProcessor videoFile={videoFile} />
+                )}
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <h2 className="text-xl font-semibold flex items-center">
+                  <span className="mr-2">📹</span>
+                  Live Camera Feed
+                </h2>
+                <div className="bg-gray-900 rounded-lg h-96 flex items-center justify-center">
+                  <div className="text-center text-white">
+                    <div className="text-6xl mb-4">📹</div>
+                    <p className="text-xl font-medium">Live Feed Mode</p>
+                    <p className="text-sm text-gray-400 mt-2">
+                      Connect RTSP camera or run AI pipeline
+                    </p>
+                    <p className="text-xs text-gray-500 mt-4">
+                      Backend: http://localhost:8000
+                    </p>
                   </div>
                 </div>
-              ) : (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-yellow-600">⚠️</span>
-                    <div>
-                      <p className="text-sm text-yellow-900 font-medium">
-                        Connecting to Backend...
-                      </p>
-                      <p className="text-xs text-yellow-700 mt-1">
-                        Make sure backend is running at http://localhost:8000
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Alerts Panel - Takes 1 column */}
           <div className="lg:col-span-1">
-            <AlertPanel alerts={alerts} onAcknowledge={handleAcknowledgeAlert} />
+            <AlertPanel alerts={[]} />
           </div>
         </div>
 
-        {/* Swimmer List (optional, for debugging) */}
-        {swimmers.length > 0 && (
-          <div className="mt-8 bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4">Tracked Swimmers</h2>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left">Track ID</th>
-                    <th className="px-4 py-2 text-left">Status</th>
-                    <th className="px-4 py-2 text-left">Confidence</th>
-                    <th className="px-4 py-2 text-left">First Seen</th>
-                    <th className="px-4 py-2 text-left">Last Seen</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {swimmers.map((swimmer) => (
-                    <tr key={swimmer.track_id} className="border-t">
-                      <td className="px-4 py-2 font-mono">#{swimmer.track_id}</td>
-                      <td className="px-4 py-2">
-                        <span
-                          className={`px-2 py-1 rounded text-xs ${
-                            swimmer.status === 'active'
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-gray-100 text-gray-700'
-                          }`}
-                        >
-                          {swimmer.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2">{swimmer.confidence.toFixed(2)}</td>
-                      <td className="px-4 py-2 text-xs text-gray-600">
-                        {new Date(swimmer.first_seen).toLocaleTimeString()}
-                      </td>
-                      <td className="px-4 py-2 text-xs text-gray-600">
-                        {new Date(swimmer.last_seen).toLocaleTimeString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {/* Info Banner */}
+        <div className="mt-8 bg-gradient-to-r from-blue-50 to-primary-50 border-2 border-primary-200 rounded-lg p-6">
+          <div className="flex items-start space-x-4">
+            <div className="text-4xl">💡</div>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                How It Works
+              </h3>
+              <ul className="space-y-2 text-sm text-gray-700">
+                <li className="flex items-center">
+                  <span className="text-green-500 mr-2">✓</span>
+                  Upload beach video or connect live camera
+                </li>
+                <li className="flex items-center">
+                  <span className="text-green-500 mr-2">✓</span>
+                  YOLOv8 AI detects people in water
+                </li>
+                <li className="flex items-center">
+                  <span className="text-green-500 mr-2">✓</span>
+                  ByteTrack assigns unique IDs to each swimmer
+                </li>
+                <li className="flex items-center">
+                  <span className="text-green-500 mr-2">✓</span>
+                  Real-time alerts for potential safety issues
+                </li>
+              </ul>
             </div>
           </div>
-        )}
+        </div>
       </main>
     </div>
   )
