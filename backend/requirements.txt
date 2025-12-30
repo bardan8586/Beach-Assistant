@@ -1,0 +1,20 @@
+# Beach Safety Monitor - Backend Dependencies
+# ============================================
+
+# FastAPI & Server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+websockets==12.0
+
+# MongoDB (Async)
+motor==3.3.2              # Async MongoDB driver
+pymongo==4.6.0            # MongoDB driver (used by motor)
+
+# Data Validation & Settings
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Utilities
+python-dotenv==1.0.0
+
