@@ -10,6 +10,7 @@ import logging
 
 from app.repositories import AlertRepository
 from app.database import database
+from app.models import AlertStatus
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/alerts", tags=["Alerts"])
@@ -38,22 +39,28 @@ async def get_alerts(
         repo = AlertRepository(database.database)
         
         # Build filter dict
-        filters = {}
-        if camera_id:
-            filters["camera_id"] = camera_id
+        status_filter = None
         if status:
-            filters["status"] = status
-        if severity:
-            filters["severity"] = severity
+            try:
+                status_filter = AlertStatus(status)
+            except ValueError:
+                pass  # Invalid status, will return empty
         
         # Get alerts
-        alerts = await repo.get_alerts(filters=filters, limit=limit)
+        alerts = await repo.get_recent_alerts(
+            camera_id=camera_id,
+            status=status_filter,
+            limit=limit
+        )
+        
+        # Filter by severity if provided
+        if severity:
+            alerts = [a for a in alerts if a.severity == severity]
         
         return {
             "success": True,
             "data": alerts,
-            "count": len(alerts),
-            "filters": filters
+            "count": len(alerts)
         }
         
     except Exception as e:
@@ -79,7 +86,13 @@ async def get_alert(alert_id: str):
     """
     try:
         repo = AlertRepository(database.database)
-        alert = await repo.get_alert_by_id(alert_id)
+        # Find alert by alert_id
+        alert_dict = await repo.collection.find_one({"alert_id": alert_id})
+        if alert_dict:
+            from app.models import AlertInDB
+            alert = AlertInDB(**alert_dict)
+        else:
+            alert = None
         
         if alert:
             return {
@@ -118,8 +131,10 @@ async def update_alert(alert_id: str, update_data: dict):
     - Updated alert
     """
     try:
+        from app.models import AlertUpdate
         repo = AlertRepository(database.database)
-        updated_alert = await repo.update_alert(alert_id, update_data)
+        alert_update = AlertUpdate(**update_data)
+        updated_alert = await repo.update(alert_id, alert_update)
         
         if updated_alert:
             logger.info(f"Alert {alert_id} updated: {update_data}")

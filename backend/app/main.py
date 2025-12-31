@@ -35,9 +35,13 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting Beach Safety Monitor Backend...")
     
     try:
-        # Connect to MongoDB
-        await database.connect()
-        logger.info("✓ MongoDB connected")
+        # Connect to MongoDB (non-blocking, won't fail if connection fails)
+        try:
+            await database.connect()
+            logger.info("✓ MongoDB connected")
+        except Exception as e:
+            logger.warning(f"⚠ MongoDB connection failed (continuing anyway): {e}")
+            logger.warning("⚠ API will work but database operations will fail")
         
         yield  # Application runs here
         

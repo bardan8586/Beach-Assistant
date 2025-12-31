@@ -30,10 +30,11 @@ async def get_cameras(status: Optional[str] = None):
     try:
         repo = CameraRepository(database.database)
         
+        cameras = await repo.get_all()
+        
+        # Filter by status if provided
         if status:
-            cameras = await repo.get_cameras_by_status(status)
-        else:
-            cameras = await repo.get_all_cameras()
+            cameras = [c for c in cameras if c.status == status]
         
         return {
             "success": True,
@@ -64,7 +65,7 @@ async def get_camera(camera_id: str):
     """
     try:
         repo = CameraRepository(database.database)
-        camera = await repo.get_camera_by_id(camera_id)
+        camera = await repo.get_by_id(camera_id)
         
         if camera:
             return {
@@ -102,7 +103,7 @@ async def register_camera(camera: CameraCreate):
     """
     try:
         repo = CameraRepository(database.database)
-        created_camera = await repo.create_camera(camera.dict())
+        created_camera = await repo.create(camera)
         
         logger.info(f"Camera registered: {camera.camera_id}")
         return {
@@ -137,8 +138,10 @@ async def update_camera(camera_id: str, update_data: dict):
     - Updated camera
     """
     try:
+        from app.models import CameraUpdate
         repo = CameraRepository(database.database)
-        updated_camera = await repo.update_camera(camera_id, update_data)
+        camera_update = CameraUpdate(**update_data)
+        updated_camera = await repo.update(camera_id, camera_update)
         
         if updated_camera:
             logger.info(f"Camera {camera_id} updated")
