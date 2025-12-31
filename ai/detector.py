@@ -23,7 +23,7 @@ def load_yolov8_model(model_name: str = "yolov8n.pt", device: str = None):
 def detect_people(
     model: Any, 
     frame, 
-    conf_thres: float = 0.3, 
+    conf_thres: float = 0.5,  # Increased from 0.3 for better accuracy
     iou_thres: float = 0.5
 ) -> List[Tuple[int, int, int, int, float]]:
     """

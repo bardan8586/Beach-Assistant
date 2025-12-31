@@ -27,6 +27,7 @@ from video_input import RTSPVideoStream
 from detector import load_yolov8_model, detect_people
 from tracker import PersonTracker
 from heatmap import HeatmapAccumulator
+from filter import apply_all_filters
 
 # --------- Configurations ---------
 # For testing: use the test video
@@ -34,8 +35,8 @@ import os
 if len(sys.argv) > 1:
     RTSP_URL = sys.argv[1]
 else:
-    # Default to test video
-    RTSP_URL = os.path.join(Path(__file__).parent.parent, "tests/data/beach_test.mp4")
+    # Default to beach swimming video
+    RTSP_URL = os.path.join(Path(__file__).parent.parent, "tests/data/Video_Generation_of_Beach_Swimming.mp4")
 
 OUTPUT_FPS = 10
 HEATMAP_SIZE = (360, 640)    # Heatmap resolution (height, width), can match video or be smaller
@@ -125,8 +126,16 @@ try:
         orig_frame = frame.copy()
 
         # --- b. Detect swimmers ---
-        detections = detect_people(yolo_model, frame)
+        raw_detections = detect_people(yolo_model, frame, conf_thres=0.5)  # Higher confidence
         # Format: [(x1, y1, x2, y2, conf), ...]
+        
+        # --- b.1 Apply filters to improve accuracy ---
+        detections = apply_all_filters(
+            raw_detections, 
+            frame, 
+            FRAME_SHAPE,
+            strict_mode=False  # Don't require water detection (too strict for some videos)
+        )
 
         # --- c. Track swimmers ---
         tracked_people = tracker.update(detections, timestamp=frame_timestamp)
@@ -163,10 +172,31 @@ try:
         # --- g. Display the frame ---
         cv2.imshow("Swimmer Tracking", frame_with_overlay)
         
-        # Console output every 30 frames
+        # Console output every 30 frames with detailed stats
         if frame_idx % 30 == 0:
-            print(f"Frame {frame_idx:4d} | Swimmers: {len(tracked_people):2d} | "
-                  f"FPS: {current_fps:.1f} | Logged: {len(tracked_people)} tracks")
+            # Calculate average confidence
+            avg_conf = sum(d[4] for d in detections) / len(detections) if detections else 0.0
+            
+            # Get unique track IDs
+            track_ids = [p.track_id for p in tracked_people]
+            unique_tracks = len(set(track_ids))
+            
+            print(f"Frame {frame_idx:4d} | Raw: {len(raw_detections):2d} | "
+                  f"Filtered: {len(detections):2d} | Swimmers: {len(tracked_people):2d} | "
+                  f"Unique Tracks: {unique_tracks:2d} | Avg Conf: {avg_conf:.2f} | FPS: {current_fps:.1f}")
+        
+        # Detailed output every 100 frames
+        if frame_idx % 100 == 0 and tracked_people:
+            print(f"\n📊 Detailed Stats at Frame {frame_idx}:")
+            print(f"   Active Swimmers: {len(tracked_people)}")
+            for person in tracked_people[:5]:  # Show first 5
+                x1, y1, x2, y2 = person.bbox
+                time_in_view = person.last_seen - person.first_seen
+                print(f"   Track #{person.track_id}: Conf={person.confidence:.2f}, "
+                      f"Box=({x1},{y1},{x2},{y2}), Time={time_in_view:.1f}s")
+            if len(tracked_people) > 5:
+                print(f"   ... and {len(tracked_people) - 5} more swimmers")
+            print()
 
         # --- h. Logging per-frame tracking data ---
         # Write each tracked person with timestamp
