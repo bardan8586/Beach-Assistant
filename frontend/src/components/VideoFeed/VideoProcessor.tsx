@@ -4,7 +4,9 @@
  * Process video and display results
  */
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
+import VideoPlayer from './VideoPlayer'
+import { useAppStore } from '../../store/useAppStore'
 
 interface ProcessingStats {
   framesProcessed: number
@@ -24,7 +26,6 @@ export default function VideoProcessor({ videoFile }: VideoProcessorProps) {
     swimmersDetected: 0,
     processing: false,
   })
-  const videoRef = useRef<HTMLVideoElement>(null)
   const [videoUrl, setVideoUrl] = useState<string>('')
 
   useEffect(() => {
@@ -65,18 +66,18 @@ export default function VideoProcessor({ videoFile }: VideoProcessorProps) {
     )
   }
 
+  const { swimmers, showBoundingBoxes, showHeatmap } = useAppStore()
+
   return (
     <div className="space-y-4">
-      {/* Video Preview */}
-      <div className="bg-black rounded-lg overflow-hidden">
-        <video
-          ref={videoRef}
-          src={videoUrl}
-          controls
-          className="w-full"
-          style={{ maxHeight: '500px' }}
-        />
-      </div>
+      {/* Video Preview with Overlays */}
+      <VideoPlayer
+        swimmers={swimmers}
+        showBoundingBoxes={showBoundingBoxes}
+        showHeatmap={showHeatmap}
+        cameraId="uploaded_video"
+        videoUrl={videoUrl}
+      />
 
       {/* Processing Stats */}
       <div className="grid grid-cols-3 gap-4">

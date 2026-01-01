@@ -4,7 +4,7 @@
  * Beach Safety Monitor Dashboard with Video Processing
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './index.css'
 
 // Components
@@ -12,15 +12,70 @@ import StatsCard from './components/Stats/StatsCard'
 import VideoUploader from './components/VideoUpload/VideoUploader'
 import VideoProcessor from './components/VideoFeed/VideoProcessor'
 import AlertPanel from './components/Alerts/AlertPanel'
+import VideoPlayer from './components/VideoFeed/VideoPlayer'
+import { useAppStore } from './store/useAppStore'
+import { useWebSocket } from './hooks/useWebSocket'
+import { apiService } from './services/api'
 
 function App() {
   const [videoFile, setVideoFile] = useState<File | null>(null)
-  const [activeTab, setActiveTab] = useState<'upload' | 'live'>('upload')
+  const [activeTab, setActiveTab] = useState<'upload' | 'live'>('live')  // Start on live tab
+  
+  // Get data from store
+  const { 
+    swimmers, 
+    showBoundingBoxes, 
+    showHeatmap, 
+    selectedCamera,
+    updateSwimmers,
+    setIsConnected
+  } = useAppStore()
 
-  // Mock stats (in real app, would come from API)
+  // Connect WebSocket for real-time updates
+  const { isConnected: wsConnected } = useWebSocket({
+    cameraId: selectedCamera,
+    onMessage: (message) => {
+      if (message.type === 'swimmers') {
+        // Convert backend format to frontend format
+        const formattedSwimmers = message.data.map((s: any) => ({
+          track_id: s.track_id,
+          camera_id: message.camera_id,
+          bbox: s.bbox,
+          confidence: s.confidence || 0.8,
+          first_seen: s.first_seen || new Date().toISOString(),
+          last_seen: s.last_seen || new Date().toISOString(),
+          status: 'active' as const
+        }))
+        updateSwimmers(formattedSwimmers)
+      }
+    }
+  })
+
+  // Update connection status
+  useEffect(() => {
+    setIsConnected(wsConnected)
+  }, [wsConnected, setIsConnected])
+
+  // Fetch initial data
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const swimmersData = await apiService.getSwimmers(selectedCamera)
+        updateSwimmers(swimmersData)
+      } catch (error) {
+        console.error('Failed to fetch initial swimmers:', error)
+      }
+    }
+    fetchData()
+    // Refresh every 5 seconds as fallback
+    const interval = setInterval(fetchData, 5000)
+    return () => clearInterval(interval)
+  }, [selectedCamera, updateSwimmers])
+
+  // Calculate stats from actual data
   const stats = {
-    activeSwimmers: 0,
-    avgTime: '--:--',
+    activeSwimmers: swimmers.length,
+    avgTime: swimmers.length > 0 ? '2:30' : '--:--', // TODO: Calculate from swimmer timestamps
     totalAlerts: 0,
   }
 
@@ -135,18 +190,12 @@ function App() {
                   <span className="mr-2">📹</span>
                   Live Camera Feed
                 </h2>
-                <div className="bg-gray-900 rounded-lg h-96 flex items-center justify-center">
-                  <div className="text-center text-white">
-                    <div className="text-6xl mb-4">📹</div>
-                    <p className="text-xl font-medium">Live Feed Mode</p>
-                    <p className="text-sm text-gray-400 mt-2">
-                      Connect RTSP camera or run AI pipeline
-                    </p>
-                    <p className="text-xs text-gray-500 mt-4">
-                      Backend: http://localhost:8000
-                    </p>
-                  </div>
-                </div>
+                <VideoPlayer
+                  swimmers={swimmers}
+                  showBoundingBoxes={showBoundingBoxes}
+                  showHeatmap={showHeatmap}
+                  cameraId={selectedCamera}
+                />
               </div>
             )}
           </div>

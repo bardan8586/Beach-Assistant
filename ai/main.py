@@ -17,6 +17,8 @@ import cv2
 import time
 import csv
 import os
+import requests
+import json
 
 # --- Import pipeline components ---
 import sys
@@ -43,6 +45,12 @@ HEATMAP_SIZE = (360, 640)    # Heatmap resolution (height, width), can match vid
 DECAY = 0.98                 # How quickly heatmap "forgets" old activity (1.0=no decay, <1.0=temporal fade)
 GAUSS_SIGMA = 12             # Blur for heatmap overlay
 LOG_FILE = "tracking_log.csv"
+
+# Backend API configuration
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+CAMERA_ID = os.getenv("CAMERA_ID", "cam_001")
+SEND_TO_BACKEND = os.getenv("SEND_TO_BACKEND", "true").lower() == "true"
+BACKEND_SEND_INTERVAL = 1  # Send to backend every frame for real-time updates
 
 # --- Initialize modules ---
 print("Loading YOLOv8 model...")
@@ -140,6 +148,45 @@ try:
         # --- c. Track swimmers ---
         tracked_people = tracker.update(detections, timestamp=frame_timestamp)
         # tracked_people: List[TrackedPerson] (has .track_id, .bbox, ...)
+
+        # --- c.1 Send data to backend API (every N frames) ---
+        if SEND_TO_BACKEND and frame_idx % BACKEND_SEND_INTERVAL == 0:
+            try:
+                swimmers_data = []
+                for person in tracked_people:
+                    x1, y1, x2, y2 = person.bbox
+                    swimmers_data.append({
+                        "track_id": person.track_id,
+                        "bbox": {
+                            "x1": x1,
+                            "y1": y1,
+                            "x2": x2,
+                            "y2": y2
+                        },
+                        "confidence": person.confidence
+                    })
+                
+                payload = {
+                    "camera_id": CAMERA_ID,
+                    "timestamp": frame_timestamp,
+                    "swimmers": swimmers_data
+                }
+                
+                response = requests.post(
+                    f"{BACKEND_URL}/api/data/ingest",
+                    json=payload,
+                    timeout=1.0  # Don't block if backend is slow
+                )
+                if response.status_code == 200:
+                    if frame_idx % 30 == 0:  # Log every 30 frames
+                        print(f"✅ Sent {len(swimmers_data)} swimmers to backend (Frame {frame_idx})")
+            except requests.exceptions.ConnectionError:
+                if frame_idx == 0 or frame_idx % 60 == 0:  # Warn on first frame and every 60 frames
+                    print(f"⚠️  Backend not reachable at {BACKEND_URL}")
+                    print(f"   Make sure backend is running: cd backend && python -m app.main")
+            except Exception as e:
+                if frame_idx % 60 == 0:  # Only log errors occasionally
+                    print(f"⚠️  Failed to send to backend: {e}")
 
         # --- d. Update heatmap ---
         heatmap_acc.update(tracked_people, frame_idx)

@@ -105,13 +105,12 @@ class WebSocketService:
             camera_id: Camera identifier
             swimmers: List of swimmer data
         """
+        from datetime import datetime
         message = {
-            "type": "update",
+            "type": "swimmers",  # Changed from "update" to match frontend
             "camera_id": camera_id,
-            "data": {
-                "swimmers": swimmers,
-                "swimmer_count": len(swimmers)
-            }
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": swimmers  # Send swimmers directly, not nested
         }
         await self.broadcast_to_camera(camera_id, message)
     

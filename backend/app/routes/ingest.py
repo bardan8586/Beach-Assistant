@@ -43,8 +43,9 @@ async def ingest_data(request: IngestRequest):
     """
     try:
         # Update camera last_seen
-        camera_repo = CameraRepository(database.get_database())
-        await camera_repo.update_last_seen(request.camera_id)
+        if database.database:
+            camera_repo = CameraRepository(database.database)
+            await camera_repo.update_last_seen(request.camera_id)
         
         # Process swimmer detections
         swimmers = await swimmer_service.process_detections(
