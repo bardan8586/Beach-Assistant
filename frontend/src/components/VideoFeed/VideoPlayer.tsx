@@ -47,13 +47,13 @@ export default function VideoPlayer({
 
   // Draw bounding boxes on canvas overlay
   useEffect(() => {
-    if (!showBoundingBoxes || !canvasRef.current || !videoRef.current) return
+    if (!showBoundingBoxes || !canvasRef.current) return
 
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    // Match canvas size to video display size
+    // Match canvas size to container size
     const container = containerRef.current
     if (container) {
       const rect = container.getBoundingClientRect()
@@ -64,9 +64,15 @@ export default function VideoPlayer({
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    // Calculate scaling factors (video might be displayed at different size)
-    const scaleX = canvas.width / videoSize.width
-    const scaleY = canvas.height / videoSize.height
+    if (swimmers.length === 0) return
+
+    // Use default video size if not available
+    const displayWidth = videoSize.width || 1280
+    const displayHeight = videoSize.height || 720
+
+    // Calculate scaling factors
+    const scaleX = canvas.width / displayWidth
+    const scaleY = canvas.height / displayHeight
 
     // Draw bounding boxes for each swimmer
     swimmers.forEach((swimmer) => {
