@@ -1,10 +1,10 @@
 /**
- * Main App Component - Professional Dashboard
- * ===========================================
- * Complete beach safety monitoring dashboard with all tracking data
+ * Main App Component - Complete Video Processing Dashboard
+ * ========================================================
+ * Full workflow: Upload video -> Process with AI -> Real-time tracking display
  */
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import './index.css'
 
 // Components
@@ -12,12 +12,18 @@ import DetailedStats from './components/Stats/DetailedStats'
 import VideoPlayer from './components/VideoFeed/VideoPlayer'
 import SwimmerList from './components/Swimmers/SwimmerList'
 import AlertPanel from './components/Alerts/AlertPanel'
+import VideoUploader from './components/VideoUpload/VideoUploader'
 import DataDebugPanel from './components/Debug/DataDebugPanel'
 import { useAppStore } from './store/useAppStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import { apiService } from './services/api'
+import { videoService } from './services/videoService'
 
 function App() {
+  const [uploadedVideo, setUploadedVideo] = useState<File | null>(null)
+  const [videoUrl, setVideoUrl] = useState<string>('')
+  const [processing, setProcessing] = useState(false)
+  const [processingStatus, setProcessingStatus] = useState<string>('idle')
   
   // Get data from store
   const { 
@@ -28,7 +34,8 @@ function App() {
     updateSwimmers,
     setIsConnected,
     toggleBoundingBoxes,
-    toggleHeatmap
+    toggleHeatmap,
+    setSelectedCamera
   } = useAppStore()
 
   // Connect WebSocket for real-time updates
@@ -77,6 +84,58 @@ function App() {
     return () => clearInterval(interval)
   }, [selectedCamera, updateSwimmers])
 
+  // Handle video file selection
+  const handleVideoSelected = async (file: File) => {
+    setUploadedVideo(file)
+    
+    // Create object URL for preview
+    const url = URL.createObjectURL(file)
+    setVideoUrl(url)
+
+    try {
+      // Upload video to backend
+      setProcessingStatus('uploading')
+      const uploadResult = await videoService.uploadVideo(file)
+      
+      // Generate camera ID from video ID
+      const cameraId = `upload_${uploadResult.video_id.substring(0, 8)}`
+      setSelectedCamera(cameraId)
+      
+      // Start AI processing
+      setProcessingStatus('processing')
+      setProcessing(true)
+      const processResult = await videoService.processVideo(uploadResult.video_id, cameraId)
+      
+      console.log('🚀 AI processing started:', processResult)
+      setProcessingStatus('processing')
+      
+      // Poll for status updates
+      const statusInterval = setInterval(async () => {
+        if (uploadResult.video_id) {
+          const status = await videoService.getStatus(uploadResult.video_id)
+          if (status.status === 'completed') {
+            clearInterval(statusInterval)
+            setProcessingStatus('completed')
+            setProcessing(false)
+          }
+        }
+      }, 2000)
+      
+    } catch (error) {
+      console.error('Error processing video:', error)
+      setProcessingStatus('error')
+      setProcessing(false)
+    }
+  }
+
+  // Cleanup video URL
+  useEffect(() => {
+    return () => {
+      if (videoUrl) {
+        URL.revokeObjectURL(videoUrl)
+      }
+    }
+  }, [videoUrl])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -91,7 +150,7 @@ function App() {
                   Beach Safety Monitor
                 </h1>
                 <p className="text-sm text-gray-600">
-                  Real-time AI Swimmer Detection & Tracking System
+                  Upload video → AI Processing → Real-time Tracking
                 </p>
               </div>
             </div>
@@ -110,9 +169,18 @@ function App() {
                 <div className="text-sm font-semibold text-gray-900 mt-1">{selectedCamera}</div>
               </div>
               <div className="text-right">
-                <div className="text-xs text-gray-500 uppercase tracking-wide">Time</div>
-                <div className="text-sm font-mono text-gray-900 mt-1">
-                  {new Date().toLocaleTimeString()}
+                <div className="text-xs text-gray-500 uppercase tracking-wide">Status</div>
+                <div className={`text-sm font-semibold mt-1 ${
+                  processingStatus === 'processing' ? 'text-blue-600' :
+                  processingStatus === 'completed' ? 'text-green-600' :
+                  processingStatus === 'error' ? 'text-red-600' :
+                  'text-gray-600'
+                }`}>
+                  {processingStatus === 'uploading' ? '📤 Uploading...' :
+                   processingStatus === 'processing' ? '🤖 Processing...' :
+                   processingStatus === 'completed' ? '✅ Complete' :
+                   processingStatus === 'error' ? '❌ Error' :
+                   'Ready'}
                 </div>
               </div>
             </div>
@@ -129,44 +197,68 @@ function App() {
 
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          {/* Left Column: Video Feed (2/3 width) */}
+          {/* Left Column: Video Section (2/3 width) */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Video Player */}
+            {/* Video Upload or Player */}
             <div className="bg-white rounded-lg shadow-lg p-4">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-900 flex items-center">
                   <span className="mr-2">📹</span>
-                  Live Video Feed
+                  {uploadedVideo ? 'Video Analysis' : 'Upload Video'}
                 </h2>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={toggleBoundingBoxes}
-                    className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                      showBoundingBoxes
-                        ? 'bg-primary-600 text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    {showBoundingBoxes ? '✓' : ''} Boxes
-                  </button>
-                  <button
-                    onClick={toggleHeatmap}
-                    className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                      showHeatmap
-                        ? 'bg-primary-600 text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    {showHeatmap ? '✓' : ''} Heatmap
-                  </button>
-                </div>
+                {uploadedVideo && (
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={toggleBoundingBoxes}
+                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                        showBoundingBoxes
+                          ? 'bg-primary-600 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      {showBoundingBoxes ? '✓' : ''} Boxes
+                    </button>
+                    <button
+                      onClick={toggleHeatmap}
+                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                        showHeatmap
+                          ? 'bg-primary-600 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      {showHeatmap ? '✓' : ''} Heatmap
+                    </button>
+                  </div>
+                )}
               </div>
-              <VideoPlayer
-                swimmers={swimmers}
-                showBoundingBoxes={showBoundingBoxes}
-                showHeatmap={showHeatmap}
-                cameraId={selectedCamera}
-              />
+
+              {!uploadedVideo ? (
+                <VideoUploader onVideoSelected={handleVideoSelected} />
+              ) : (
+                <div className="space-y-4">
+                  <VideoPlayer
+                    swimmers={swimmers}
+                    showBoundingBoxes={showBoundingBoxes}
+                    showHeatmap={showHeatmap}
+                    cameraId={selectedCamera}
+                    videoUrl={videoUrl}
+                  />
+                  
+                  {processing && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                        <div>
+                          <div className="font-medium text-blue-900">AI Processing Active</div>
+                          <div className="text-sm text-blue-700">
+                            Detecting swimmers and tracking in real-time...
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Swimmer List */}
@@ -201,8 +293,18 @@ function App() {
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Data Updates:</span>
-                  <span className="font-medium text-gray-900">Real-time</span>
+                  <span className="text-gray-600">Video Status:</span>
+                  <span className={`font-medium ${
+                    processingStatus === 'processing' ? 'text-blue-600' :
+                    processingStatus === 'completed' ? 'text-green-600' :
+                    'text-gray-600'
+                  }`}>
+                    {processingStatus === 'idle' ? 'No video' :
+                     processingStatus === 'uploading' ? 'Uploading...' :
+                     processingStatus === 'processing' ? 'Processing...' :
+                     processingStatus === 'completed' ? 'Complete' :
+                     processingStatus === 'error' ? 'Error' : 'Ready'}
+                  </span>
                 </div>
               </div>
             </div>

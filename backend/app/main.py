@@ -14,7 +14,7 @@ import logging
 
 from app.config import settings
 from app.database import database
-from app.routes import swimmers_router, ingest_router, websocket_router, alerts_router, cameras_router
+from app.routes import swimmers_router, ingest_router, websocket_router, alerts_router, cameras_router, video_router
 from app.utils.logger import setup_logging
 
 # Setup logging
@@ -76,6 +76,7 @@ app.include_router(swimmers_router, prefix=settings.API_PREFIX)
 app.include_router(ingest_router, prefix=settings.API_PREFIX)
 app.include_router(alerts_router, prefix=settings.API_PREFIX)
 app.include_router(cameras_router, prefix=settings.API_PREFIX)
+app.include_router(video_router, prefix=settings.API_PREFIX)  # Video upload & processing
 app.include_router(websocket_router)  # WebSocket doesn't use /api prefix
 
 
