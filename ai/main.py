@@ -51,6 +51,7 @@ BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 CAMERA_ID = os.getenv("CAMERA_ID", "cam_001")
 SEND_TO_BACKEND = os.getenv("SEND_TO_BACKEND", "true").lower() == "true"
 BACKEND_SEND_INTERVAL = 1  # Send to backend every frame for real-time updates
+SHOW_WINDOW = os.getenv("SHOW_WINDOW", "false").lower() == "true"  # Disable OpenCV window for web mode
 
 # --- Initialize modules ---
 print("Loading YOLOv8 model...")
@@ -103,7 +104,8 @@ if not os.path.exists(LOG_FILE) or os.path.getsize(LOG_FILE) == 0:
         writer.writerow(log_fields)
 
 # --- Main pipeline loop ---
-cv2.namedWindow("Swimmer Tracking", cv2.WINDOW_NORMAL)
+if SHOW_WINDOW:
+    cv2.namedWindow("Swimmer Tracking", cv2.WINDOW_NORMAL)
 frame_idx = 0
 fps_counter = 0
 fps_timer = time.time()
@@ -155,15 +157,33 @@ try:
                 swimmers_data = []
                 for person in tracked_people:
                     x1, y1, x2, y2 = person.bbox
+                    # Get first_seen and last_seen from tracker
+                    first_seen_ts = tracker.first_seen.get(person.track_id, frame_timestamp)
+                    last_seen_ts = tracker.last_seen.get(person.track_id, frame_timestamp)
+                    
+                    # Convert to ISO string if needed
+                    from datetime import datetime
+                    if isinstance(first_seen_ts, (int, float)):
+                        first_seen_str = datetime.fromtimestamp(first_seen_ts).isoformat()
+                    else:
+                        first_seen_str = first_seen_ts
+                    
+                    if isinstance(last_seen_ts, (int, float)):
+                        last_seen_str = datetime.fromtimestamp(last_seen_ts).isoformat()
+                    else:
+                        last_seen_str = last_seen_ts
+                    
                     swimmers_data.append({
                         "track_id": person.track_id,
                         "bbox": {
-                            "x1": x1,
-                            "y1": y1,
-                            "x2": x2,
-                            "y2": y2
+                            "x1": int(x1),
+                            "y1": int(y1),
+                            "x2": int(x2),
+                            "y2": int(y2)
                         },
-                        "confidence": person.confidence
+                        "confidence": float(person.confidence),
+                        "first_seen": first_seen_str,
+                        "last_seen": last_seen_str
                     })
                 
                 payload = {
@@ -179,7 +199,7 @@ try:
                 )
                 if response.status_code == 200:
                     if frame_idx % 30 == 0:  # Log every 30 frames
-                        print(f"✅ Sent {len(swimmers_data)} swimmers to backend (Frame {frame_idx})")
+                        print(f"✅ Sent {len(swimmers_data)} swimmers to backend (Frame {frame_idx}, Camera: {CAMERA_ID})")
             except requests.exceptions.ConnectionError:
                 if frame_idx == 0 or frame_idx % 60 == 0:  # Warn on first frame and every 60 frames
                     print(f"⚠️  Backend not reachable at {BACKEND_URL}")
@@ -216,8 +236,11 @@ try:
         cv2.putText(frame_with_overlay, info_text, (10, 30),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 1)
 
-        # --- g. Display the frame ---
-        cv2.imshow("Swimmer Tracking", frame_with_overlay)
+        # --- g. Display the frame (only if SHOW_WINDOW is enabled) ---
+        if SHOW_WINDOW:
+            cv2.imshow("Swimmer Tracking", frame_with_overlay)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
         
         # Console output every 30 frames with detailed stats
         if frame_idx % 30 == 0:

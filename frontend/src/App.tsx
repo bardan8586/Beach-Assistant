@@ -42,22 +42,39 @@ function App() {
   const { isConnected: wsConnected } = useWebSocket({
     cameraId: selectedCamera,
     onMessage: (message) => {
-      console.log('📨 WebSocket message:', message)
+      console.log('📨 WebSocket message received:', message)
+      console.log('   Current camera:', selectedCamera)
+      console.log('   Message camera:', message.camera_id)
+      
       if (message.type === 'swimmers') {
-        // Convert backend format to frontend format
-        const formattedSwimmers = message.data.map((s: any) => ({
-          track_id: s.track_id,
-          camera_id: message.camera_id,
-          bbox: s.bbox,
-          confidence: s.confidence || 0.8,
-          first_seen: s.first_seen || new Date().toISOString(),
-          last_seen: s.last_seen || new Date().toISOString(),
-          status: 'active' as const
-        }))
-        console.log(`✅ Updated ${formattedSwimmers.length} swimmers`)
-        updateSwimmers(formattedSwimmers)
+        console.log('   Swimmers data:', message.data)
+        
+        // Only process if it's for the current camera or 'all'
+        if (message.camera_id === selectedCamera || message.camera_id === 'all') {
+          // Convert backend format to frontend format
+          const formattedSwimmers = message.data.map((s: any) => {
+            console.log('   Processing swimmer:', s)
+            return {
+              track_id: s.track_id,
+              camera_id: message.camera_id,
+              bbox: s.bbox || { x1: 0, y1: 0, x2: 0, y2: 0 },
+              confidence: s.confidence || 0.8,
+              first_seen: s.first_seen || new Date().toISOString(),
+              last_seen: s.last_seen || new Date().toISOString(),
+              status: 'active' as const
+            }
+          })
+          console.log(`✅ Updated ${formattedSwimmers.length} swimmers for camera ${message.camera_id}`)
+          console.log('   Formatted swimmers:', formattedSwimmers)
+          updateSwimmers(formattedSwimmers)
+        } else {
+          console.log(`⚠️ Ignoring message for different camera: ${message.camera_id} (current: ${selectedCamera})`)
+        }
+      } else {
+        console.log('   Unknown message type:', message.type)
       }
-    }
+    },
+    autoConnect: true  // Always auto-connect
   })
 
   // Update connection status
@@ -97,9 +114,13 @@ function App() {
       setProcessingStatus('uploading')
       const uploadResult = await videoService.uploadVideo(file)
       
-      // Generate camera ID from video ID
+      // Generate camera ID from video ID (use first 8 chars)
       const cameraId = `upload_${uploadResult.video_id.substring(0, 8)}`
+      console.log(`📹 Setting camera ID: ${cameraId}`)
       setSelectedCamera(cameraId)
+      
+      // Wait a moment for WebSocket to reconnect with new camera_id
+      await new Promise(resolve => setTimeout(resolve, 1000))
       
       // Start AI processing
       setProcessingStatus('processing')
@@ -107,19 +128,28 @@ function App() {
       const processResult = await videoService.processVideo(uploadResult.video_id, cameraId)
       
       console.log('🚀 AI processing started:', processResult)
+      console.log(`   Camera ID: ${cameraId}`)
+      console.log(`   Video ID: ${uploadResult.video_id}`)
       setProcessingStatus('processing')
       
       // Poll for status updates
       const statusInterval = setInterval(async () => {
         if (uploadResult.video_id) {
-          const status = await videoService.getStatus(uploadResult.video_id)
-          if (status.status === 'completed') {
-            clearInterval(statusInterval)
-            setProcessingStatus('completed')
-            setProcessing(false)
+          try {
+            const status = await videoService.getStatus(uploadResult.video_id)
+            if (status.status === 'completed') {
+              clearInterval(statusInterval)
+              setProcessingStatus('completed')
+              setProcessing(false)
+            }
+          } catch (error) {
+            console.error('Status check error:', error)
           }
         }
       }, 2000)
+      
+      // Store interval to cleanup if component unmounts
+      return () => clearInterval(statusInterval)
       
     } catch (error) {
       console.error('Error processing video:', error)
@@ -163,6 +193,11 @@ function App() {
                     {wsConnected ? 'Connected' : 'Disconnected'}
                   </span>
                 </div>
+                {!wsConnected && (
+                  <div className="text-xs text-red-500 mt-1">
+                    Check console for errors
+                  </div>
+                )}
               </div>
               <div className="text-right">
                 <div className="text-xs text-gray-500 uppercase tracking-wide">Camera</div>
@@ -242,6 +277,8 @@ function App() {
                     showHeatmap={showHeatmap}
                     cameraId={selectedCamera}
                     videoUrl={videoUrl}
+                    onToggleBoxes={toggleBoundingBoxes}
+                    onToggleHeatmap={toggleHeatmap}
                   />
                   
                   {processing && (
@@ -267,7 +304,17 @@ function App() {
 
           {/* Right Column: Alerts & Info (1/3 width) */}
           <div className="lg:col-span-1 space-y-6">
-            <AlertPanel alerts={[]} />
+            <AlertPanel 
+              alerts={[]} 
+              onAcknowledge={async (alertId) => {
+                try {
+                  await apiService.acknowledgeAlert(alertId)
+                  // Refresh alerts or update state
+                } catch (error) {
+                  console.error('Failed to acknowledge alert:', error)
+                }
+              }}
+            />
             
             {/* System Info */}
             <div className="bg-white rounded-lg shadow-lg p-4">
@@ -313,7 +360,7 @@ function App() {
       </main>
 
       {/* Debug Panel */}
-      <DataDebugPanel swimmers={swimmers} isConnected={wsConnected} />
+      <DataDebugPanel swimmers={swimmers} isConnected={wsConnected} selectedCamera={selectedCamera} />
     </div>
   )
 }

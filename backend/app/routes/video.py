@@ -107,6 +107,7 @@ async def process_video(video_id: str, camera_id: Optional[str] = None):
         env["BACKEND_URL"] = os.getenv("BACKEND_URL", "http://localhost:8000")
         env["CAMERA_ID"] = camera_id
         env["SEND_TO_BACKEND"] = "true"
+        env["SHOW_WINDOW"] = "false"  # Disable OpenCV window for web mode
         
         # Use python3 or python (try python3 first)
         python_cmd = "python3" if shutil.which("python3") else "python"

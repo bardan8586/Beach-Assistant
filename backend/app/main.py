@@ -102,21 +102,27 @@ async def health_check():
     
     Used by load balancers and monitoring tools.
     """
+    try:
+        db_status = "connected" if database.database is not None else "disconnected"
+    except Exception:
+        db_status = "unknown"
+    
     return {
         "status": "healthy",
-        "database": "connected" if database.database else "disconnected"
+        "database": db_status
     }
 
 
 if __name__ == "__main__":
     import uvicorn
     
-    # Run server
+    # Run server with WebSocket support
     uvicorn.run(
         "app.main:app",
         host=settings.HOST,
         port=settings.PORT,
         reload=settings.DEBUG,  # Auto-reload on code changes in debug mode
-        log_level="info"
+        log_level="info",
+        ws="auto"  # Enable WebSocket support
     )
 

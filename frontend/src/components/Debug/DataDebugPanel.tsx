@@ -10,9 +10,10 @@ import type { Swimmer } from '../../types/swimmer'
 interface DataDebugPanelProps {
   swimmers: Swimmer[]
   isConnected: boolean
+  selectedCamera?: string
 }
 
-export default function DataDebugPanel({ swimmers, isConnected }: DataDebugPanelProps) {
+export default function DataDebugPanel({ swimmers, isConnected, selectedCamera }: DataDebugPanelProps) {
   const [isOpen, setIsOpen] = useState(false)
 
   if (!isOpen) {
@@ -64,11 +65,17 @@ export default function DataDebugPanel({ swimmers, isConnected }: DataDebugPanel
           {swimmers.length === 0 && (
             <div className="text-yellow-600">
               ⚠️ No swimmer data received yet. Check:
-              <ul className="list-disc list-inside mt-2 space-y-1">
-                <li>Is AI pipeline running?</li>
-                <li>Is backend receiving data?</li>
+              <ul className="list-disc list-inside mt-2 space-y-1 text-xs">
+                <li>Is AI pipeline running? (check backend logs)</li>
+                <li>Is backend receiving data? (check /api/data/ingest)</li>
+                <li>Is WebSocket connected? (check connection status)</li>
+                <li>Is camera_id matching? (check console logs)</li>
                 <li>Check browser console for errors</li>
               </ul>
+              <div className="mt-2 text-xs">
+                <p>Current camera: {selectedCamera || 'none'}</p>
+                <p>WebSocket: {isConnected ? '✅ Connected' : '❌ Disconnected'}</p>
+              </div>
             </div>
           )}
         </div>

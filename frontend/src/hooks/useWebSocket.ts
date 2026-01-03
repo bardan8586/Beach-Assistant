@@ -10,7 +10,7 @@ import { WS_URL, WS_RECONNECT_INTERVAL } from '../utils/constants'
 interface WebSocketMessage {
   type: 'swimmers' | 'alert' | 'heatmap'
   data: any
-  timestamp: string
+  timestamp: number | string  // Can be number (Unix) or ISO string
   camera_id: string
 }
 
@@ -32,63 +32,91 @@ export function useWebSocket({
 
   const connect = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log('WebSocket already connected')
       return // Already connected
     }
 
+    // Close existing connection if any
+    if (wsRef.current) {
+      wsRef.current.close()
+      wsRef.current = null
+    }
+
     try {
-      const wsUrl = `${WS_URL}/ws/feed?camera_id=${cameraId}`
+      const wsUrl = `${WS_URL}/ws/feed?camera_id=${cameraId || 'all'}`
+      console.log(`🔌 Connecting to WebSocket: ${wsUrl}`)
       const ws = new WebSocket(wsUrl)
 
       ws.onopen = () => {
-        console.log('✅ WebSocket connected')
+        console.log('✅ WebSocket connected successfully')
         setIsConnected(true)
       }
 
       ws.onmessage = (event) => {
         try {
           const message: WebSocketMessage = JSON.parse(event.data)
+          console.log('📨 WebSocket message received:', message.type)
           setLastMessage(message)
-          onMessage?.(message)
+          if (onMessage) {
+            onMessage(message)
+          }
         } catch (error) {
-          console.error('Failed to parse WebSocket message:', error)
+          console.error('❌ Failed to parse WebSocket message:', error, event.data)
         }
       }
 
       ws.onerror = (error) => {
-        console.error('❌ WebSocket error:', error)
+        console.error('❌ WebSocket error event:', error)
+        console.error('   URL:', wsUrl)
+        console.error('   ReadyState:', ws.readyState)
+        setIsConnected(false)
       }
 
-      ws.onclose = () => {
-        console.log('🔌 WebSocket disconnected')
+      ws.onclose = (event) => {
+        console.log(`🔌 WebSocket disconnected (code: ${event.code}, reason: ${event.reason || 'none'})`)
         setIsConnected(false)
         
-        // Auto-reconnect
-        reconnectTimeoutRef.current = setTimeout(() => {
-          console.log('🔄 Attempting to reconnect...')
-          connect()
-        }, WS_RECONNECT_INTERVAL)
+        // Only auto-reconnect if not a normal closure
+        if (event.code !== 1000) {
+          reconnectTimeoutRef.current = window.setTimeout(() => {
+            console.log('🔄 Attempting to reconnect...')
+            connect()
+          }, WS_RECONNECT_INTERVAL)
+        }
       }
 
       wsRef.current = ws
     } catch (error) {
-      console.error('Failed to create WebSocket:', error)
+      console.error('❌ Failed to create WebSocket:', error)
+      setIsConnected(false)
     }
   }
 
   const disconnect = () => {
     if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current)
+      window.clearTimeout(reconnectTimeoutRef.current)
+      reconnectTimeoutRef.current = undefined
     }
-    wsRef.current?.close()
-    wsRef.current = null
+    if (wsRef.current) {
+      wsRef.current.close(1000, 'Manual disconnect')
+      wsRef.current = null
+    }
     setIsConnected(false)
   }
 
   useEffect(() => {
-    if (autoConnect) {
-      connect()
+    if (autoConnect && cameraId) {
+      // Small delay to ensure previous connection is closed
+      const timeoutId = setTimeout(() => {
+        connect()
+      }, 100)
+      
+      return () => {
+        clearTimeout(timeoutId)
+        disconnect()
+      }
     }
-
+    
     return () => {
       disconnect()
     }

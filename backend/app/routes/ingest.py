@@ -60,7 +60,8 @@ async def ingest_data(request: IngestRequest):
         # Broadcast to WebSocket clients
         await websocket_service.broadcast_swimmer_update(
             camera_id=request.camera_id,
-            swimmers=[s.model_dump() for s in swimmers]
+            swimmers=[s.model_dump() for s in swimmers],
+            timestamp=request.timestamp  # Pass timestamp from AI pipeline
         )
         
         logger.info(f"Ingested data: camera={request.camera_id}, swimmers={len(swimmers)}")

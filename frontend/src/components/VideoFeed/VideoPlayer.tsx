@@ -14,6 +14,8 @@ interface VideoPlayerProps {
   showHeatmap: boolean
   cameraId: string
   videoUrl?: string  // Optional video URL to display
+  onToggleBoxes?: () => void  // Optional toggle handler
+  onToggleHeatmap?: () => void  // Optional toggle handler
 }
 
 export default function VideoPlayer({ 
@@ -21,7 +23,9 @@ export default function VideoPlayer({
   showBoundingBoxes,
   showHeatmap,
   cameraId,
-  videoUrl
+  videoUrl,
+  onToggleBoxes,
+  onToggleHeatmap
 }: VideoPlayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -47,24 +51,29 @@ export default function VideoPlayer({
 
   // Draw bounding boxes on canvas overlay
   useEffect(() => {
-    if (!showBoundingBoxes || !canvasRef.current) return
+    // Always redraw when swimmers or video size changes
+    const draw = () => {
+      if (!canvasRef.current) return
 
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
+      const canvas = canvasRef.current
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
 
-    // Match canvas size to container size
-    const container = containerRef.current
-    if (container) {
-      const rect = container.getBoundingClientRect()
-      canvas.width = rect.width
-      canvas.height = rect.height
-    }
+      // Match canvas size to container size
+      const container = containerRef.current
+      if (container) {
+        const rect = container.getBoundingClientRect()
+        canvas.width = rect.width
+        canvas.height = rect.height
+      }
 
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
+      // Clear canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    if (swimmers.length === 0) return
+      // Only draw if bounding boxes are enabled and we have swimmers
+      if (!showBoundingBoxes || swimmers.length === 0) {
+        return
+      }
 
     // Use default video size if not available
     const displayWidth = videoSize.width || 1280
@@ -109,7 +118,39 @@ export default function VideoPlayer({
         ctx.fillText(`${(swimmer.confidence * 100).toFixed(0)}%`, scaledX1 + 5, scaledY1 - 25)
       }
     })
-  }, [swimmers, showBoundingBoxes, videoSize])
+    }
+
+    // Initial draw
+    draw()
+
+    // Redraw on video resize or when video metadata loads
+    const video = videoRef.current
+    let interval: number | null = null
+    
+    if (video) {
+      const handleResize = () => {
+        if (video.videoWidth && video.videoHeight) {
+          setVideoSize({ width: video.videoWidth, height: video.videoHeight })
+        }
+        draw()
+      }
+      video.addEventListener('resize', handleResize)
+      video.addEventListener('loadedmetadata', handleResize)
+      
+      // Also redraw periodically to catch updates
+      interval = window.setInterval(draw, 100) // Redraw every 100ms
+    }
+    
+    return () => {
+      if (video) {
+        video.removeEventListener('resize', () => {})
+        video.removeEventListener('loadedmetadata', () => {})
+      }
+      if (interval !== null) {
+        window.clearInterval(interval)
+      }
+    }
+  }, [swimmers, showBoundingBoxes, videoSize, videoUrl])
 
   return (
     <div ref={containerRef} className="relative bg-gray-900 rounded-lg overflow-hidden aspect-video">
@@ -141,45 +182,54 @@ export default function VideoPlayer({
         </div>
       )}
 
-      {/* Canvas overlay for bounding boxes */}
-      {showBoundingBoxes && (
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 w-full h-full pointer-events-none"
-          style={{ zIndex: 10 }}
-        />
-      )}
+      {/* Canvas overlay for bounding boxes - Always render, visibility controlled by showBoundingBoxes */}
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        style={{ zIndex: 10, display: showBoundingBoxes ? 'block' : 'none' }}
+      />
 
-      {/* Swimmer count overlay */}
-      {swimmers.length > 0 && (
-        <div className="absolute top-4 left-4 bg-black bg-opacity-70 rounded px-3 py-2 z-20">
-          <p className="text-white text-sm font-medium">
-            🏊 Active Swimmers: {swimmers.length}
+      {/* Swimmer count overlay - Always show, even if 0 */}
+      <div className="absolute top-4 left-4 bg-black bg-opacity-70 rounded px-3 py-2 z-20">
+        <p className="text-white text-sm font-medium">
+          🏊 Active Swimmers: {swimmers.length}
+        </p>
+        {swimmers.length > 0 && (
+          <p className="text-white text-xs mt-1">
+            Track IDs: {swimmers.map(s => s.track_id).join(', ')}
           </p>
+        )}
+      </div>
+
+      {/* Controls overlay - Only show if handlers provided */}
+      {(onToggleBoxes || onToggleHeatmap) && (
+        <div className="absolute bottom-4 right-4 flex space-x-2 z-20">
+          {onToggleBoxes && (
+            <button 
+              onClick={onToggleBoxes}
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                showBoundingBoxes 
+                  ? 'bg-primary-600 text-white' 
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              {showBoundingBoxes ? '✓' : ''} Boxes
+            </button>
+          )}
+          {onToggleHeatmap && (
+            <button 
+              onClick={onToggleHeatmap}
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                showHeatmap 
+                  ? 'bg-primary-600 text-white' 
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              {showHeatmap ? '✓' : ''} Heatmap
+            </button>
+          )}
         </div>
       )}
-
-      {/* Controls overlay */}
-      <div className="absolute bottom-4 right-4 flex space-x-2 z-20">
-        <button 
-          className={`px-3 py-1 rounded text-xs font-medium ${
-            showBoundingBoxes 
-              ? 'bg-primary-600 text-white' 
-              : 'bg-gray-800 text-gray-300'
-          }`}
-        >
-          Boxes
-        </button>
-        <button 
-          className={`px-3 py-1 rounded text-xs font-medium ${
-            showHeatmap 
-              ? 'bg-primary-600 text-white' 
-              : 'bg-gray-800 text-gray-300'
-          }`}
-        >
-          Heatmap
-        </button>
-      </div>
     </div>
   )
 }

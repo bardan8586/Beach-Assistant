@@ -30,28 +30,51 @@ async def websocket_feed(
     - ws://localhost:8000/ws/feed?camera_id=cam_001
     - ws://localhost:8000/ws/feed (subscribe to all cameras)
     """
-    await websocket_service.connect(websocket, camera_id)
-    
     try:
+        # Accept the WebSocket connection first
+        await websocket.accept()
+        logger.info(f"✅ WebSocket connection accepted for camera: {camera_id}")
+        
+        # Register with service (don't call accept again, already accepted)
+        if camera_id not in websocket_service.active_connections:
+            websocket_service.active_connections[camera_id] = set()
+        websocket_service.active_connections[camera_id].add(websocket)
+        logger.info(f"✅ WebSocket registered: camera={camera_id}, total={len(websocket_service.active_connections[camera_id])}")
+        
         # Send initial connection confirmation
         await websocket.send_json({
             "type": "connected",
-            "message": f"Subscribed to camera: {camera_id}"
+            "message": f"Subscribed to camera: {camera_id}",
+            "camera_id": camera_id
         })
+        logger.info(f"✅ Sent connection confirmation to camera: {camera_id}")
         
         # Keep connection alive and handle incoming messages
         while True:
-            # Receive messages from client (e.g., heartbeat pings)
-            data = await websocket.receive_text()
-            
-            # Echo back (heartbeat response)
-            if data == "ping":
-                await websocket.send_text("pong")
+            try:
+                # Receive messages from client (e.g., heartbeat pings)
+                data = await websocket.receive_text()
+                
+                # Echo back (heartbeat response)
+                if data == "ping":
+                    await websocket.send_text("pong")
+            except WebSocketDisconnect:
+                logger.info(f"Client disconnected from camera {camera_id}")
+                break
+            except Exception as e:
+                # If receive fails, connection might be closed
+                logger.debug(f"WebSocket receive error: {e}")
+                break
             
     except WebSocketDisconnect:
-        websocket_service.disconnect(websocket, camera_id)
         logger.info(f"Client disconnected from camera {camera_id}")
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-        websocket_service.disconnect(websocket, camera_id)
+        logger.error(f"❌ WebSocket error: {e}", exc_info=True)
+    finally:
+        # Clean up connection
+        if camera_id in websocket_service.active_connections:
+            websocket_service.active_connections[camera_id].discard(websocket)
+            if len(websocket_service.active_connections[camera_id]) == 0:
+                del websocket_service.active_connections[camera_id]
+        logger.info(f"✅ WebSocket cleaned up for camera: {camera_id}")
 

@@ -1,107 +1,103 @@
-# 🧪 TEST YOUR SYSTEM NOW
+# 🚀 TEST THE APP NOW - Step by Step
 
-## ✅ Current Status
+## ✅ Everything is Fixed!
 
-**Backend:** ✅ Running on http://localhost:8000  
-**Frontend:** ✅ Running on http://localhost:5173  
-**API Test:** ✅ Working (test data accepted)
-
----
-
-## 🚀 How to Test Full Flow
-
-### **Step 1: Open Frontend**
-```
-http://localhost:5173
-```
-
-### **Step 2: Click "📹 Live Camera Feed" Tab**
-
-### **Step 3: Run AI Pipeline** (in separate terminal)
+### **Step 1: Start Backend**
 ```bash
-cd ai
-python main.py ../tests/data/Video_Generation_of_Beach_Swimming.mp4
+cd backend
+python -m app.main
 ```
 
-### **Step 4: Watch the Magic! 🎉**
+**Look for:**
+- `🚀 Starting Beach Safety Monitor Backend...`
+- `✓ MongoDB connected`
+- `INFO:     Application startup complete.`
+- Server running on `http://0.0.0.0:8000`
 
+### **Step 2: Start Frontend (New Terminal)**
+```bash
+cd frontend
+npm run dev
+```
+
+**Look for:**
+- `VITE v7.x.x  ready in xxx ms`
+- `➜  Local:   http://localhost:5173/`
+
+### **Step 3: Open Browser**
+1. Go to: **http://localhost:5173**
+2. **Press F12** to open DevTools
+3. Go to **Console** tab
+
+### **Step 4: Check WebSocket Connection**
+In browser console, you should see:
+```
+🔌 Connecting to WebSocket: ws://localhost:8000/ws/feed?camera_id=cam_001
+✅ WebSocket connected successfully
+📨 WebSocket message received: connected
+```
+
+**If you see errors:**
+- Check backend is running
+- Check backend logs for WebSocket errors
+- Try refreshing the page
+
+### **Step 5: Upload Video**
+1. Click "📁 Select Video File" or drag & drop
+2. Select a beach/swimming video
+3. Watch the console for:
+   ```
+   📹 Setting camera ID: upload_xxxxx
+   🚀 AI processing started
+   📨 WebSocket message received: swimmers
+   ✅ Updated X swimmers
+   ```
+
+### **Step 6: Watch Real-Time Updates**
 You should see:
-- ✅ Swimmer count updating in real-time
-- ✅ Bounding boxes appearing on video
-- ✅ Track IDs (ID: 1, ID: 2, etc.)
-- ✅ Stats cards updating
-- ✅ Console showing "✅ Sent X swimmers to backend"
+- ✅ Video playing in browser
+- ✅ Bounding boxes appearing on swimmers
+- ✅ Swimmer list table populating
+- ✅ Statistics cards updating
+- ✅ Track IDs showing on boxes
 
----
+## 🐛 If Something Doesn't Work
 
-## 🔍 What to Check
+### **WebSocket Not Connecting:**
+1. Check backend terminal for errors
+2. Check browser console for error details
+3. Verify backend is on port 8000: `lsof -ti:8000`
 
-### **In Browser Console (F12):**
-- Look for: `✅ WebSocket connected`
-- Look for: Messages with `type: "swimmers"`
-- No errors about connection
+### **No Bounding Boxes:**
+1. Check if swimmers data is received (console logs)
+2. Check if "Boxes" toggle is ON
+3. Check debug panel (bottom-right button)
+4. Verify canvas is drawing (check console for errors)
 
-### **In AI Pipeline Terminal:**
-- Look for: `✅ Sent X swimmers to backend`
-- Look for: Frame counts and swimmer counts
-- No connection errors
-
-### **In Frontend:**
-- Stats card shows swimmer count > 0
-- Video player shows bounding boxes
-- Track IDs visible on boxes
-
----
-
-## 🐛 If It's Not Working
-
-### **No bounding boxes?**
-1. Check browser console for WebSocket errors
-2. Check if AI pipeline is sending: Look for "✅ Sent" messages
-3. Check backend logs for ingest messages
-
-### **WebSocket not connecting?**
-1. Make sure backend is running
-2. Check browser console for connection errors
-3. Try refreshing the page
-
-### **No swimmers showing?**
-1. Check AI pipeline is detecting: Look for "Swimmers: X" in output
-2. Check backend API: `curl http://localhost:8000/api/swimmers`
-3. Check WebSocket messages in browser console
-
----
-
-## 📊 Expected Output
-
-**AI Pipeline:**
-```
-Frame   30 | Raw:  9 | Filtered:  8 | Swimmers:  9 | Unique Tracks:  9 | Avg Conf: 0.87 | FPS: 6.1
-✅ Sent 9 swimmers to backend (Frame 30)
-```
-
-**Browser Console:**
-```
-✅ WebSocket connected
-{type: "swimmers", camera_id: "cam_001", data: Array(9)}
-```
-
-**Frontend Display:**
-- Stats: "Active Swimmers: 9"
-- Video: 9 bounding boxes with IDs
-- Real-time updates every frame
-
----
+### **No Swimmer Data:**
+1. Check if AI pipeline is running (backend logs)
+2. Check if data is being sent to `/api/data/ingest`
+3. Check WebSocket is broadcasting (backend logs)
+4. Check camera_id matching (console logs)
 
 ## ✅ Success Indicators
 
-- ✅ AI detects swimmers
-- ✅ Data sent to backend
-- ✅ Backend stores in MongoDB
-- ✅ WebSocket broadcasts to frontend
-- ✅ Frontend displays bounding boxes
-- ✅ Track IDs visible
-- ✅ Stats update in real-time
+**Backend Console:**
+- `✅ WebSocket connection accepted for camera: ...`
+- `✅ Sent X swimmers to backend (Frame X, Camera: ...)`
+- `Ingested data: camera=..., swimmers=X`
 
-**If all these work → SYSTEM IS FULLY FUNCTIONAL! 🎉**
+**Browser Console:**
+- `✅ WebSocket connected successfully`
+- `📨 WebSocket message received: swimmers`
+- `✅ Updated X swimmers for camera ...`
 
+**Web Interface:**
+- Connection status: **Connected** (green)
+- Swimmer count > 0
+- Bounding boxes visible
+- Table populated
+
+## 🎯 You're Ready!
+
+Everything is fixed and connected. Upload a video and watch the magic happen! 🏖️✨

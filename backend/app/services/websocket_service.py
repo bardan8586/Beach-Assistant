@@ -34,16 +34,16 @@ class WebSocketService:
         Register new WebSocket connection
         
         Args:
-            websocket: WebSocket connection
+            websocket: WebSocket connection (must be accepted before calling this)
             camera_id: Camera to subscribe to (default: "all")
         """
-        await websocket.accept()
+        # Note: websocket.accept() must be called in the route handler before this
         
         if camera_id not in self.active_connections:
             self.active_connections[camera_id] = set()
         
         self.active_connections[camera_id].add(websocket)
-        logger.info(f"WebSocket connected: camera={camera_id}, total={len(self.active_connections[camera_id])}")
+        logger.info(f"WebSocket registered: camera={camera_id}, total={len(self.active_connections[camera_id])}")
     
     def disconnect(self, websocket: WebSocket, camera_id: str = "all"):
         """
@@ -97,20 +97,27 @@ class WebSocketService:
         for ws in disconnected:
             self.disconnect(ws, camera_id)
     
-    async def broadcast_swimmer_update(self, camera_id: str, swimmers: list):
+    async def broadcast_swimmer_update(self, camera_id: str, swimmers: list, timestamp: float = None):
         """
         Broadcast swimmer position update
         
         Args:
             camera_id: Camera identifier
             swimmers: List of swimmer data
+            timestamp: Optional timestamp (from AI pipeline)
         """
+        import time
         from datetime import datetime
+        
+        # Use provided timestamp or current time
+        if timestamp is None:
+            timestamp = time.time()
+        
         message = {
-            "type": "swimmers",  # Changed from "update" to match frontend
+            "type": "swimmers",
             "camera_id": camera_id,
-            "timestamp": datetime.utcnow().isoformat(),
-            "data": swimmers  # Send swimmers directly, not nested
+            "timestamp": timestamp,  # Send as number for consistency
+            "data": swimmers  # Send swimmers directly
         }
         await self.broadcast_to_camera(camera_id, message)
     
