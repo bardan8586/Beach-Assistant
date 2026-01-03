@@ -175,6 +175,9 @@ htmlcov/
 *.ipynb
 
 # -------------------- Documentation --------------------
+# Exclude all .md files EXCEPT those in docs/ folder
+*.md
+!docs/**/*.md
 # Sphinx documentation
 docs/_build/
 
