@@ -54,6 +54,7 @@ class WaterAnalyzer:
         safe_zone_ratio: float = 0.3,  # Bottom 30% = safe (shallow)
         caution_zone_ratio: float = 0.5,  # Next 50% = caution
         danger_zone_ratio: float = 0.2,  # Top 20% = danger (deep)
+        shore_line_y: Optional[int] = None,  # Actual shore line Y coordinate
     ):
         """
         Initialize water analyzer.
@@ -63,18 +64,47 @@ class WaterAnalyzer:
             safe_zone_ratio: Fraction of frame height for safe zone (from bottom)
             caution_zone_ratio: Fraction for caution zone (middle)
             danger_zone_ratio: Fraction for danger zone (top)
+            shore_line_y: Actual shore line Y coordinate (if None, uses frame bottom)
         """
         self.frame_h, self.frame_w = frame_shape[:2]
+        self.shore_line_y = shore_line_y
+        self.safe_zone_ratio = safe_zone_ratio
+        self.caution_zone_ratio = caution_zone_ratio
+        self.danger_zone_ratio = danger_zone_ratio
         
-        # Calculate zone boundaries (from bottom to top)
-        self.safe_zone_top = int(self.frame_h * (1 - safe_zone_ratio))
-        self.caution_zone_top = int(self.frame_h * (1 - safe_zone_ratio - caution_zone_ratio))
-        self.danger_zone_top = 0
+        # Update zone boundaries based on actual shore line
+        self._update_zones()
+    
+    def _update_zones(self):
+        """Update zone boundaries based on shore line or frame bottom."""
+        if self.shore_line_y is not None:
+            # Use actual shore line as reference
+            # Safe zone: from shore line down (beach area)
+            # Water zones: from shore line up
+            water_area_height = self.shore_line_y
+            safe_zone_height = self.frame_h - self.shore_line_y
+            
+            # Safe zone is on beach (below shore)
+            self.safe_zone_top = self.shore_line_y
+            # Caution zone: first part of water (near shore)
+            self.caution_zone_top = int(self.shore_line_y - water_area_height * self.caution_zone_ratio)
+            # Danger zone: deep water (top)
+            self.danger_zone_top = 0
+        else:
+            # Fallback: use frame bottom as reference
+            self.safe_zone_top = int(self.frame_h * (1 - self.safe_zone_ratio))
+            self.caution_zone_top = int(self.frame_h * (1 - self.safe_zone_ratio - self.caution_zone_ratio))
+            self.danger_zone_top = 0
         
         # Zone regions
         self.safe_zone = (0, self.safe_zone_top, self.frame_w, self.frame_h)
         self.caution_zone = (0, self.caution_zone_top, self.frame_w, self.safe_zone_top)
         self.danger_zone = (0, 0, self.frame_w, self.caution_zone_top)
+    
+    def update_shore_line(self, shore_line_y: int):
+        """Update shore line and recalculate zones."""
+        self.shore_line_y = shore_line_y
+        self._update_zones()
     
     def detect_water(self, frame: np.ndarray) -> Tuple[bool, float]:
         """
@@ -256,11 +286,28 @@ class WaterAnalyzer:
         # Blend with original
         result = cv2.addWeighted(frame, 1 - alpha, overlay, alpha, 0)
         
-        # Draw zone labels
+        # Draw zone labels with background for better visibility
         font = cv2.FONT_HERSHEY_SIMPLEX
-        cv2.putText(result, "SAFE", (10, self.frame_h - 20), font, 0.7, (0, 255, 0), 2)
-        cv2.putText(result, "CAUTION", (10, self.safe_zone_top + 20), font, 0.7, (0, 255, 255), 2)
-        cv2.putText(result, "DANGER", (10, self.caution_zone_top + 20), font, 0.7, (0, 0, 255), 2)
+        font_scale = 0.8
+        thickness = 2
+        
+        # SAFE zone label
+        safe_text = "SAFE ZONE"
+        (text_w, text_h), _ = cv2.getTextSize(safe_text, font, font_scale, thickness)
+        cv2.rectangle(result, (5, self.frame_h - text_h - 10), (text_w + 15, self.frame_h + 5), (0, 255, 0), -1)
+        cv2.putText(result, safe_text, (10, self.frame_h - 5), font, font_scale, (0, 0, 0), thickness)
+        
+        # CAUTION zone label
+        caution_text = "CAUTION ZONE"
+        (text_w, text_h), _ = cv2.getTextSize(caution_text, font, font_scale, thickness)
+        cv2.rectangle(result, (5, self.safe_zone_top - text_h - 5), (text_w + 15, self.safe_zone_top + 5), (0, 255, 255), -1)
+        cv2.putText(result, caution_text, (10, self.safe_zone_top), font, font_scale, (0, 0, 0), thickness)
+        
+        # DANGER zone label
+        danger_text = "DANGER ZONE"
+        (text_w, text_h), _ = cv2.getTextSize(danger_text, font, font_scale, thickness)
+        cv2.rectangle(result, (5, self.caution_zone_top - text_h - 5), (text_w + 15, self.caution_zone_top + 5), (0, 0, 255), -1)
+        cv2.putText(result, danger_text, (10, self.caution_zone_top), font, font_scale, (255, 255, 255), thickness)
         
         return result
 

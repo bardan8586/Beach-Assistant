@@ -33,6 +33,7 @@ from filter import apply_all_filters
 from water_analyzer import WaterAnalyzer, WaterZone
 from behavior_analyzer import BehaviorAnalyzer
 from risk_engine import RiskEngine, RiskLevel
+from scene_analyzer import SceneAnalyzer
 
 # --------- Configurations ---------
 # For testing: use the test video
@@ -78,14 +79,14 @@ else:
 print("Initializing person tracker...")
 tracker = PersonTracker()
 
-print("Initializing water analyzer...")
-water_analyzer = WaterAnalyzer(frame_shape=FRAME_SHAPE)
-
 print("Initializing behavior analyzer...")
 behavior_analyzer = BehaviorAnalyzer()
 
 print("Initializing risk engine...")
 risk_engine = RiskEngine()
+
+# Water analyzer will be initialized after we get first frame
+water_analyzer = None
 
 # Check if using RTSP or local file
 use_rtsp = RTSP_URL.startswith("rtsp://")
@@ -116,6 +117,16 @@ else:
 
 FRAME_SHAPE = frame.shape
 print(f"First frame shape: {FRAME_SHAPE}")
+
+print("Initializing scene analyzer...")
+scene_analyzer = SceneAnalyzer(frame_shape=FRAME_SHAPE[:2])
+scene_geometry = scene_analyzer.analyze_scene(frame)
+print(f"✅ Shore line detected at Y={scene_geometry.shore_line_y}")
+print(f"✅ Horizon detected at Y={scene_geometry.horizon_y}")
+
+print("Initializing water analyzer...")
+water_analyzer = WaterAnalyzer(frame_shape=FRAME_SHAPE[:2], 
+                               shore_line_y=scene_geometry.shore_line_y)
 
 print("Setting up heatmap accumulator...")
 heatmap_acc = HeatmapAccumulator(frame_shape=FRAME_SHAPE,
@@ -163,9 +174,35 @@ try:
         orig_frame = frame.copy()
 
         # --- b. Detect swimmers ---
-        # Use new Detector API if available, otherwise fallback to legacy
+        # Use multi-scale detection: lower confidence for far objects
+        # First pass: normal confidence for close objects
         if isinstance(yolo_model, Detector):
             raw_detections = yolo_model.detect_people(frame, conf_thres=0.5)
+            # Second pass: lower confidence for far/small objects
+            far_detections = yolo_model.detect_people(frame, conf_thres=0.3, min_size=20)
+            # Combine and deduplicate (keep higher confidence if overlap)
+            all_detections = raw_detections + far_detections
+            # Simple deduplication: if boxes overlap significantly, keep higher confidence
+            filtered_detections = []
+            for det in all_detections:
+                x1, y1, x2, y2, conf = det
+                is_duplicate = False
+                for existing in filtered_detections:
+                    ex1, ey1, ex2, ey2, econf = existing
+                    # Check overlap
+                    overlap_x = max(0, min(x2, ex2) - max(x1, ex1))
+                    overlap_y = max(0, min(y2, ey2) - max(y1, ey1))
+                    overlap_area = overlap_x * overlap_y
+                    box_area = (x2 - x1) * (y2 - y1)
+                    if overlap_area > box_area * 0.5:  # 50% overlap
+                        if conf > econf:
+                            filtered_detections.remove(existing)
+                        else:
+                            is_duplicate = True
+                        break
+                if not is_duplicate:
+                    filtered_detections.append(det)
+            raw_detections = filtered_detections
         else:
             raw_detections = detect_people(yolo_model, frame, conf_thres=0.5)
         # Format: [(x1, y1, x2, y2, conf), ...]
@@ -306,9 +343,17 @@ try:
         # --- d. Update heatmap ---
         heatmap_acc.update(tracked_people, frame_idx)
 
-        # --- e. Draw water zones overlay (optional, can toggle) ---
-        if SHOW_WINDOW:  # Only draw zones if showing window
-            frame = water_analyzer.draw_zones(frame, alpha=0.2)
+        # --- e. Draw scene geometry and water zones overlay ---
+        if SHOW_WINDOW:  # Only draw if showing window
+            # Update scene geometry periodically
+            if frame_idx % 30 == 0:  # Update every 30 frames
+                scene_geometry = scene_analyzer.analyze_scene(frame)
+                water_analyzer.update_shore_line(scene_geometry.shore_line_y)
+            
+            # Draw scene geometry (shore line, horizon)
+            frame = scene_analyzer.draw_scene_geometry(frame, scene_geometry)
+            # Draw water zones
+            frame = water_analyzer.draw_zones(frame, alpha=0.4)
         
         # --- e.1 Draw bounding boxes with risk-based colors ---
         for person in tracked_people:
@@ -338,12 +383,14 @@ try:
             label = f"ID {person.track_id}{risk_text}"
             cv2.putText(frame, label, (x1, y1-8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
             
-            # Draw trajectory (last 10 points)
+            # Draw trajectory (last 15 points) - thicker lines for visibility
             trajectory = behavior_analyzer.get_trajectory(person.track_id)
             if len(trajectory) > 1:
-                points = [(p.x, p.y) for p in trajectory[-10:]]
+                points = [(p.x, p.y) for p in trajectory[-15:]]  # Show more points
                 for i in range(1, len(points)):
-                    cv2.line(frame, points[i-1], points[i], color, 1)
+                    # Use slightly brighter color for trajectory
+                    traj_color = tuple(min(255, c + 50) for c in color) if color != (0, 0, 255) else (255, 0, 255)  # Magenta for red
+                    cv2.line(frame, points[i-1], points[i], traj_color, 2)  # Thicker line (2 instead of 1)
         
         # --- e.2 Draw active alerts ---
         active_alerts = risk_engine.get_active_alerts()

@@ -73,7 +73,8 @@ class Detector:
     def detect_people(self, 
                       frame, 
                       conf_thres: float = 0.5,
-                      iou_thres: float = 0.5) -> List[Tuple[int, int, int, int, float]]:
+                      iou_thres: float = 0.5,
+                      min_size: Optional[int] = None) -> List[Tuple[int, int, int, int, float]]:
         """
         Detect people in a frame.
         
@@ -81,24 +82,38 @@ class Detector:
             frame: Input image (numpy array, BGR as from OpenCV)
             conf_thres: Minimum confidence threshold
             iou_thres: Non-maximum suppression threshold
+            min_size: Minimum bounding box size (optional, for filtering small detections)
         
         Returns:
             List of (x1, y1, x2, y2, conf) tuples for each detected person
         """
         if self.model_type == "roboflow":
-            return self._detect_roboflow(frame, conf_thres)
+            detections = self._detect_roboflow(frame, conf_thres)
         else:
-            return self._detect_yolo(frame, conf_thres, iou_thres)
+            detections = self._detect_yolo(frame, conf_thres, iou_thres, imgsz=None)
+        
+        # Filter by minimum size if specified (for far objects, use lower threshold)
+        if min_size is not None:
+            detections = [(x1, y1, x2, y2, conf) for x1, y1, x2, y2, conf in detections
+                         if (x2 - x1) >= min_size and (y2 - y1) >= min_size]
+        
+        return detections
     
-    def _detect_yolo(self, frame, conf_thres: float, iou_thres: float) -> List[Tuple[int, int, int, int, float]]:
+    def _detect_yolo(self, frame, conf_thres: float, iou_thres: float, 
+                    imgsz: Optional[int] = None) -> List[Tuple[int, int, int, int, float]]:
         """Run YOLOv8 detection."""
+        # Use larger image size for better detection of small/far objects
+        if imgsz is None:
+            imgsz = max(frame.shape[:2])  # Use larger dimension
+        
         results = self.model(
             frame,
             conf=conf_thres,
             iou=iou_thres,
             classes=[0],  # COCO class index for 'person'
             verbose=False,
-            device=self.model.device
+            device=self.model.device,
+            imgsz=imgsz  # Larger size helps detect far objects
         )
         
         result = results[0]
