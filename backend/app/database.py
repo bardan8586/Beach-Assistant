@@ -135,3 +135,4 @@ class Database:
 # Import this in other modules: from app.database import database
 database = Database()
 
+

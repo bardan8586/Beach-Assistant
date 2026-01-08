@@ -74,3 +74,4 @@ class Settings(BaseSettings):
 # Import this in other modules: from app.config import settings
 settings = Settings()
 
+

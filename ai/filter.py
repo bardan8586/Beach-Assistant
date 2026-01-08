@@ -75,14 +75,16 @@ def filter_by_position(detections: List[Tuple[int, int, int, int, float]],
 
 
 def detect_water_region(frame: np.ndarray, 
-                        lower_half_only: bool = True) -> Tuple[bool, float]:
+                        lower_half_only: bool = True,
+                        use_advanced: bool = True) -> Tuple[bool, float]:
     """
-    Simple water detection using color analysis.
-    Looks for blue/cyan colors in the lower half of the frame.
+    Enhanced water detection using color analysis and texture.
+    Looks for blue/cyan colors and water-like textures in the frame.
     
     Args:
         frame: BGR image
         lower_half_only: Only check lower half of frame
+        use_advanced: Use advanced detection (texture + color)
     
     Returns:
         (has_water, water_confidence) tuple
@@ -100,26 +102,48 @@ def detect_water_region(frame: np.ndarray,
     
     # Define blue/cyan color range (water colors) - expanded range
     # Lower bound: darker blue
-    lower_blue = np.array([90, 30, 30])  # More lenient
+    lower_blue = np.array([90, 30, 30])
     # Upper bound: lighter blue/cyan
-    upper_blue = np.array([140, 255, 255])  # Expanded range
+    upper_blue = np.array([140, 255, 255])
     
-    # Also check for light blue/white (foam, shallow water)
-    lower_light = np.array([0, 0, 200])  # Very light colors
+    # Also check for light blue/white (foam, shallow water, reflections)
+    lower_light = np.array([0, 0, 200])
     upper_light = np.array([180, 30, 255])
     
-    # Create mask for blue regions
+    # Additional: teal/turquoise colors (tropical water)
+    lower_teal = np.array([80, 50, 50])
+    upper_teal = np.array([100, 255, 255])
+    
+    # Create masks for water colors
     blue_mask = cv2.inRange(hsv, lower_blue, upper_blue)
     light_mask = cv2.inRange(hsv, lower_light, upper_light)
-    combined_mask = cv2.bitwise_or(blue_mask, light_mask)
+    teal_mask = cv2.inRange(hsv, lower_teal, upper_teal)
+    combined_mask = cv2.bitwise_or(cv2.bitwise_or(blue_mask, light_mask), teal_mask)
     
-    # Calculate percentage of blue/light pixels
+    # Calculate percentage of water-colored pixels
     blue_ratio = np.sum(combined_mask > 0) / (combined_mask.shape[0] * combined_mask.shape[1])
     
-    # Consider it water if > 5% of lower frame is blue/light (more lenient)
-    has_water = blue_ratio > 0.05
+    # Advanced: Check for water-like texture (wave patterns, ripples)
+    if use_advanced:
+        # Convert to grayscale for texture analysis
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        
+        # Apply Laplacian to detect edges/texture (water has wavy patterns)
+        laplacian = cv2.Laplacian(gray, cv2.CV_64F)
+        texture_variance = np.var(laplacian)
+        
+        # Water typically has moderate texture variance (not too smooth, not too chaotic)
+        # Adjust threshold based on your video characteristics
+        has_texture = 50 < texture_variance < 5000
+        
+        # Combine color and texture evidence
+        has_water = blue_ratio > 0.05 or (blue_ratio > 0.02 and has_texture)
+        water_confidence = min(blue_ratio * 2, 1.0)  # Normalize confidence
+    else:
+        has_water = blue_ratio > 0.05
+        water_confidence = blue_ratio
     
-    return has_water, blue_ratio
+    return has_water, water_confidence
 
 
 def filter_by_water_context(detections: List[Tuple[int, int, int, int, float]],

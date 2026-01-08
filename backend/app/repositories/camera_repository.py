@@ -72,3 +72,4 @@ class CameraRepository:
             {"$set": {"last_seen": datetime.utcnow()}}
         )
 
+

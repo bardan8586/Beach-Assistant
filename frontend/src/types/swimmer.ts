@@ -21,3 +21,4 @@ export interface Swimmer {
   status: 'active' | 'inactive' | 'alerted';
 }
 
+

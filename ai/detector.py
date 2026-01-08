@@ -1,78 +1,215 @@
-from typing import List, Tuple, Any
+from typing import List, Tuple, Any, Optional
+import os
+import cv2
+import base64
+import requests
+import json
 
-def load_yolov8_model(model_name: str = "yolov8n.pt", device: str = None):
+class Detector:
     """
-    Loads a YOLOv8 model with GPU support if available.
-
-    :param model_name: Name or path of the model weights.
-    :param device: 'cuda', 'cpu', or None (auto). If None, tries CUDA first.
-    :return: YOLOv8 model object.
+    Unified detector supporting both local YOLOv8 models and Roboflow Inference API.
     """
-    # Lazy import to minimize startup time in pipelines
-    from ultralytics import YOLO
-    import torch
+    def __init__(self, 
+                 model_type: str = "yolo",  # "yolo" or "roboflow"
+                 model_name: str = "yolov8s.pt",  # Better default: small instead of nano
+                 roboflow_api_key: Optional[str] = None,
+                 roboflow_model_id: Optional[str] = None,
+                 roboflow_version: Optional[int] = None,
+                 device: Optional[str] = None):
+        """
+        Initialize detector with either YOLOv8 or Roboflow.
+        
+        Args:
+            model_type: "yolo" for local YOLOv8, "roboflow" for Roboflow Inference API
+            model_name: YOLOv8 model name (yolov8n.pt, yolov8s.pt, yolov8m.pt, etc.)
+            roboflow_api_key: Roboflow API key (from environment or parameter)
+            roboflow_model_id: Roboflow model ID (e.g., "swimmer-detection/1")
+            roboflow_version: Roboflow model version number
+            device: 'cuda', 'cpu', or None (auto-detect)
+        """
+        self.model_type = model_type.lower()
+        self.model = None
+        self.roboflow_config = {}
+        
+        if self.model_type == "roboflow":
+            self._init_roboflow(roboflow_api_key, roboflow_model_id, roboflow_version)
+        else:
+            self._init_yolo(model_name, device)
+    
+    def _init_yolo(self, model_name: str, device: Optional[str]):
+        """Initialize YOLOv8 model."""
+        from ultralytics import YOLO
+        import torch
+        
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        print(f"Loading YOLOv8 model: {model_name} on {device}")
+        self.model = YOLO(model_name)
+        self.model.to(device)
+        print(f"✅ YOLOv8 model loaded successfully")
+    
+    def _init_roboflow(self, api_key: Optional[str], model_id: Optional[str], version: Optional[int]):
+        """Initialize Roboflow Inference API connection."""
+        # Get from environment if not provided
+        api_key = api_key or os.getenv("ROBOFLOW_API_KEY")
+        model_id = model_id or os.getenv("ROBOFLOW_MODEL_ID")
+        version = version or int(os.getenv("ROBOFLOW_VERSION", "1"))
+        
+        if not api_key or not model_id:
+            raise ValueError(
+                "Roboflow requires ROBOFLOW_API_KEY and ROBOFLOW_MODEL_ID. "
+                "Set them as environment variables or pass as parameters."
+            )
+        
+        self.roboflow_config = {
+            "api_key": api_key,
+            "model_id": model_id,
+            "version": version,
+            "base_url": f"https://detect.roboflow.com/{model_id}/{version}"
+        }
+        print(f"✅ Roboflow Inference API configured: {model_id} v{version}")
+    
+    def detect_people(self, 
+                      frame, 
+                      conf_thres: float = 0.5,
+                      iou_thres: float = 0.5) -> List[Tuple[int, int, int, int, float]]:
+        """
+        Detect people in a frame.
+        
+        Args:
+            frame: Input image (numpy array, BGR as from OpenCV)
+            conf_thres: Minimum confidence threshold
+            iou_thres: Non-maximum suppression threshold
+        
+        Returns:
+            List of (x1, y1, x2, y2, conf) tuples for each detected person
+        """
+        if self.model_type == "roboflow":
+            return self._detect_roboflow(frame, conf_thres)
+        else:
+            return self._detect_yolo(frame, conf_thres, iou_thres)
+    
+    def _detect_yolo(self, frame, conf_thres: float, iou_thres: float) -> List[Tuple[int, int, int, int, float]]:
+        """Run YOLOv8 detection."""
+        results = self.model(
+            frame,
+            conf=conf_thres,
+            iou=iou_thres,
+            classes=[0],  # COCO class index for 'person'
+            verbose=False,
+            device=self.model.device
+        )
+        
+        result = results[0]
+        detections = []
+        
+        for box, conf, cls in zip(result.boxes.xyxy.cpu().numpy(),
+                                  result.boxes.conf.cpu().numpy(),
+                                  result.boxes.cls.cpu().numpy()):
+            if int(cls) != 0:
+                continue
+            x1, y1, x2, y2 = map(int, box)
+            detections.append((x1, y1, x2, y2, float(conf)))
+        
+        return detections
+    
+    def _detect_roboflow(self, frame, conf_thres: float) -> List[Tuple[int, int, int, int, float]]:
+        """Run Roboflow Inference API detection."""
+        # Encode frame as base64
+        _, buffer = cv2.imencode('.jpg', frame)
+        img_base64 = base64.b64encode(buffer).decode('utf-8')
+        
+        # Prepare request
+        url = f"{self.roboflow_config['base_url']}?api_key={self.roboflow_config['api_key']}"
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        
+        try:
+            response = requests.post(
+                url,
+                data=img_base64,
+                headers=headers,
+                timeout=5.0
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            detections = []
+            
+            # Parse Roboflow response
+            # Roboflow returns: {"predictions": [{"x": center_x, "y": center_y, "width": w, "height": h, "confidence": conf, "class": class_name}, ...]}
+            for pred in result.get("predictions", []):
+                # Filter for person/swimmer class
+                class_name = pred.get("class", "").lower()
+                if "person" in class_name or "swimmer" in class_name or "people" in class_name:
+                    conf = float(pred.get("confidence", 0))
+                    if conf < conf_thres:
+                        continue
+                    
+                    # Convert center+size to x1,y1,x2,y2
+                    center_x = float(pred["x"])
+                    center_y = float(pred["y"])
+                    width = float(pred["width"])
+                    height = float(pred["height"])
+                    
+                    x1 = int(center_x - width / 2)
+                    y1 = int(center_y - height / 2)
+                    x2 = int(center_x + width / 2)
+                    y2 = int(center_y + height / 2)
+                    
+                    detections.append((x1, y1, x2, y2, conf))
+            
+            return detections
+        
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️  Roboflow API error: {e}")
+            return []
+        except Exception as e:
+            print(f"⚠️  Error parsing Roboflow response: {e}")
+            return []
 
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # The YOLO object will use the specified device
-    model = YOLO(model_name)
-    model.to(device)
-    return model
-
-def detect_people(
-    model: Any, 
-    frame, 
-    conf_thres: float = 0.5,  # Increased from 0.3 for better accuracy
-    iou_thres: float = 0.5
-) -> List[Tuple[int, int, int, int, float]]:
+# Legacy functions for backward compatibility
+def load_yolov8_model(model_name: str = "yolov8s.pt", device: str = None):
     """
-    Runs person detection on a frame using the provided YOLOv8 model.
-
-    :param model: Loaded YOLOv8 model.
-    :param frame: Input image (numpy array, BGR as from OpenCV).
-    :param conf_thres: Minimum confidence for detection.
-    :param iou_thres: Non-maximum suppression threshold.
-    :return: List of (x1, y1, x2, y2, conf) tuples for each detected person.
+    Legacy function: Loads a YOLOv8 model (now defaults to 'small' for better accuracy).
+    
+    For new code, use Detector class instead.
     """
-    # Use the model's __call__ for maximum throughput (no image display etc)
+    detector = Detector(model_type="yolo", model_name=model_name, device=device)
+    return detector.model
+
+
+def detect_people(model: Any, 
+                  frame, 
+                  conf_thres: float = 0.5,
+                  iou_thres: float = 0.5) -> List[Tuple[int, int, int, int, float]]:
+    """
+    Legacy function: Runs person detection on a frame.
+    
+    For new code, use Detector class instead.
+    """
+    # If model is a Detector instance, use it directly
+    if isinstance(model, Detector):
+        return model.detect_people(frame, conf_thres, iou_thres)
+    
+    # Otherwise, assume it's a YOLOv8 model (legacy behavior)
     results = model(
         frame,
         conf=conf_thres,
         iou=iou_thres,
-        classes=[0],   # COCO class index for 'person'
+        classes=[0],
         verbose=False,
         device=model.device
     )
-
-    # Batch dimension is supported, but we expect a single frame
+    
     result = results[0]
     out = []
-    # Performance: results are on GPU, but boxes.xyxy is automatically moved to CPU
     for box, conf, cls in zip(result.boxes.xyxy.cpu().numpy(),
                               result.boxes.conf.cpu().numpy(),
                               result.boxes.cls.cpu().numpy()):
-        # Only class==0 (person) should be returned, but sanity check:
         if int(cls) != 0:
             continue
         x1, y1, x2, y2 = map(int, box)
         out.append((x1, y1, x2, y2, float(conf)))
     return out
-
-# Performance Notes:
-# - Model and device selection happens once at init.
-# - GPU inference if available; minibatch possible but kept to single-frame per call for streaming.
-# - Avoids extra conversion/copying; expects OpenCV BGR numpy arrays throughout.
-# - Results filtering and NMS is handled by Ultralytics inference call, classes=[0] avoids post-filter step.
-# - For maximum throughput, instantiate and reuse the model across frames.
-
-# Example usage in a video pipeline:
-# 
-# model = load_yolov8_model()
-# while True:
-#     frame = ...  # BGR image from stream
-#     boxes = detect_people(model, frame)
-#     for (x1, y1, x2, y2, conf) in boxes:
-#         # Do something (draw, crop, alert)
-#         pass
-

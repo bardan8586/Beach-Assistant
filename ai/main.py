@@ -26,10 +26,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from video_input import RTSPVideoStream
-from detector import load_yolov8_model, detect_people
+from detector import Detector, load_yolov8_model, detect_people  # Support both new and legacy
 from tracker import PersonTracker
 from heatmap import HeatmapAccumulator
 from filter import apply_all_filters
+from water_analyzer import WaterAnalyzer, WaterZone
+from behavior_analyzer import BehaviorAnalyzer
+from risk_engine import RiskEngine, RiskLevel
 
 # --------- Configurations ---------
 # For testing: use the test video
@@ -54,11 +57,35 @@ BACKEND_SEND_INTERVAL = 1  # Send to backend every frame for real-time updates
 SHOW_WINDOW = os.getenv("SHOW_WINDOW", "false").lower() == "true"  # Disable OpenCV window for web mode
 
 # --- Initialize modules ---
-print("Loading YOLOv8 model...")
-yolo_model = load_yolov8_model()
+# Support both YOLO and Roboflow via environment variables
+DETECTOR_TYPE = os.getenv("DETECTOR_TYPE", "yolo").lower()  # "yolo" or "roboflow"
+MODEL_NAME = os.getenv("MODEL_NAME", "yolov8s.pt")  # Better default: small instead of nano
+
+print(f"Initializing detector: {DETECTOR_TYPE}...")
+if DETECTOR_TYPE == "roboflow":
+    detector = Detector(
+        model_type="roboflow",
+        roboflow_api_key=os.getenv("ROBOFLOW_API_KEY"),
+        roboflow_model_id=os.getenv("ROBOFLOW_MODEL_ID"),
+        roboflow_version=int(os.getenv("ROBOFLOW_VERSION", "1"))
+    )
+    yolo_model = detector  # Use detector directly
+else:
+    # Use YOLOv8 (default) - create Detector instance for unified API
+    detector = Detector(model_type="yolo", model_name=MODEL_NAME)
+    yolo_model = detector  # Use detector directly
 
 print("Initializing person tracker...")
 tracker = PersonTracker()
+
+print("Initializing water analyzer...")
+water_analyzer = WaterAnalyzer(frame_shape=FRAME_SHAPE)
+
+print("Initializing behavior analyzer...")
+behavior_analyzer = BehaviorAnalyzer()
+
+print("Initializing risk engine...")
+risk_engine = RiskEngine()
 
 # Check if using RTSP or local file
 use_rtsp = RTSP_URL.startswith("rtsp://")
@@ -136,7 +163,11 @@ try:
         orig_frame = frame.copy()
 
         # --- b. Detect swimmers ---
-        raw_detections = detect_people(yolo_model, frame, conf_thres=0.5)  # Higher confidence
+        # Use new Detector API if available, otherwise fallback to legacy
+        if isinstance(yolo_model, Detector):
+            raw_detections = yolo_model.detect_people(frame, conf_thres=0.5)
+        else:
+            raw_detections = detect_people(yolo_model, frame, conf_thres=0.5)
         # Format: [(x1, y1, x2, y2, conf), ...]
         
         # --- b.1 Apply filters to improve accuracy ---
@@ -150,6 +181,51 @@ try:
         # --- c. Track swimmers ---
         tracked_people = tracker.update(detections, timestamp=frame_timestamp)
         # tracked_people: List[TrackedPerson] (has .track_id, .bbox, ...)
+        
+        # --- c.1 Analyze water conditions ---
+        water_conditions = water_analyzer.analyze_conditions(frame)
+        
+        # --- c.2 Analyze swimmer behavior and calculate risk ---
+        active_track_ids = []
+        for person in tracked_people:
+            active_track_ids.append(person.track_id)
+            
+            # Get zone for this swimmer
+            zone = water_analyzer.get_zone_for_bbox(person.bbox)
+            
+            # Analyze behavior
+            motion_metrics = behavior_analyzer.update(
+                person.track_id,
+                person.bbox,
+                frame_timestamp,
+                frame_idx
+            )
+            
+            # Calculate distance from shore
+            distance_from_shore = behavior_analyzer.get_distance_from_shore(
+                person.track_id,
+                FRAME_SHAPE[0]
+            )
+            
+            # Calculate risk score
+            risk_score = risk_engine.calculate_risk(
+                person.track_id,
+                zone,
+                motion_metrics,
+                distance_from_shore,
+                frame_timestamp
+            )
+            
+            # Collect alerts
+            if risk_score and risk_score.alert_triggered:
+                active_alerts.append(risk_score)
+        
+        # Get all active alerts
+        active_alerts = risk_engine.get_active_alerts()
+        
+        # Cleanup inactive tracks
+        behavior_analyzer.cleanup(active_track_ids)
+        risk_engine.cleanup(active_track_ids)
 
         # --- c.1 Send data to backend API (every N frames) ---
         if SEND_TO_BACKEND and frame_idx % BACKEND_SEND_INTERVAL == 0:
@@ -173,7 +249,12 @@ try:
                     else:
                         last_seen_str = last_seen_ts
                     
-                    swimmers_data.append({
+                    # Get additional analysis data
+                    risk_score = risk_engine.get_risk_score(person.track_id)
+                    zone = water_analyzer.get_zone_for_bbox(person.bbox)
+                    motion_metrics = behavior_analyzer.get_motion_metrics(person.track_id)
+                    
+                    swimmer_data = {
                         "track_id": person.track_id,
                         "bbox": {
                             "x1": int(x1),
@@ -183,13 +264,27 @@ try:
                         },
                         "confidence": float(person.confidence),
                         "first_seen": first_seen_str,
-                        "last_seen": last_seen_str
-                    })
+                        "last_seen": last_seen_str,
+                        "zone": zone.value if zone else "unknown",
+                        "risk_score": risk_score.total_score if risk_score else 0.0,
+                        "risk_level": risk_score.level.value if risk_score else "low"
+                    }
+                    
+                    swimmers_data.append(swimmer_data)
                 
+                # Add water conditions to payload
                 payload = {
                     "camera_id": CAMERA_ID,
                     "timestamp": frame_timestamp,
-                    "swimmers": swimmers_data
+                    "swimmers": swimmers_data,
+                    "water_conditions": {
+                        "has_water": water_conditions.has_water,
+                        "water_confidence": water_conditions.water_confidence,
+                        "visibility": water_conditions.visibility_estimate,
+                        "wave_activity": water_conditions.wave_activity,
+                        "calm_score": water_conditions.calm_score
+                    },
+                    "active_alerts": len(active_alerts)
                 }
                 
                 response = requests.post(
@@ -211,13 +306,54 @@ try:
         # --- d. Update heatmap ---
         heatmap_acc.update(tracked_people, frame_idx)
 
-        # --- e. Draw bounding boxes and track IDs ---
+        # --- e. Draw water zones overlay (optional, can toggle) ---
+        if SHOW_WINDOW:  # Only draw zones if showing window
+            frame = water_analyzer.draw_zones(frame, alpha=0.2)
+        
+        # --- e.1 Draw bounding boxes with risk-based colors ---
         for person in tracked_people:
             x1, y1, x2, y2 = person.bbox
-            color = (0, 255, 0)
+            
+            # Get risk score and zone
+            risk_score = risk_engine.get_risk_score(person.track_id)
+            zone = water_analyzer.get_zone_for_bbox(person.bbox)
+            
+            # Color based on risk level
+            if risk_score and risk_score.level == RiskLevel.HIGH:
+                color = (0, 0, 255)  # Red - high risk
+            elif risk_score and risk_score.level == RiskLevel.MEDIUM:
+                color = (0, 165, 255)  # Orange - medium risk
+            elif zone == WaterZone.DANGER:
+                color = (0, 255, 255)  # Yellow - in danger zone
+            else:
+                color = (0, 255, 0)  # Green - normal
+            
+            # Draw bounding box
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            label = f"ID {person.track_id}"
-            cv2.putText(frame, label, (x1, y1-8), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+            
+            # Draw label with risk info
+            risk_text = ""
+            if risk_score:
+                risk_text = f" Risk:{risk_score.total_score:.0f}"
+            label = f"ID {person.track_id}{risk_text}"
+            cv2.putText(frame, label, (x1, y1-8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+            
+            # Draw trajectory (last 10 points)
+            trajectory = behavior_analyzer.get_trajectory(person.track_id)
+            if len(trajectory) > 1:
+                points = [(p.x, p.y) for p in trajectory[-10:]]
+                for i in range(1, len(points)):
+                    cv2.line(frame, points[i-1], points[i], color, 1)
+        
+        # --- e.2 Draw active alerts ---
+        active_alerts = risk_engine.get_active_alerts()
+        if active_alerts:
+            alert_y = 60
+            for alert in active_alerts[:3]:  # Show max 3 alerts
+                alert_text = f"ALERT: Track {alert.track_id} - Risk {alert.total_score:.0f}"
+                cv2.putText(frame, alert_text, (10, alert_y), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                alert_y += 30
 
         # --- f. Overlay heatmap on frame ---
         frame_with_overlay = heatmap_acc.render_overlay(frame, alpha=0.5)
@@ -230,11 +366,21 @@ try:
             fps_timer = time.time()
         
         # --- Add info overlay ---
-        info_text = f"Frame: {frame_idx} | Swimmers: {len(tracked_people)} | FPS: {current_fps:.1f}"
+        active_alerts_count = len(risk_engine.get_active_alerts())
+        info_text = (f"Frame: {frame_idx} | Swimmers: {len(tracked_people)} | "
+                    f"FPS: {current_fps:.1f} | Alerts: {active_alerts_count}")
         cv2.putText(frame_with_overlay, info_text, (10, 30),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         cv2.putText(frame_with_overlay, info_text, (10, 30),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 1)
+        
+        # Add water conditions info
+        if water_conditions.has_water:
+            water_text = (f"Water: Vis={water_conditions.visibility_estimate:.2f} | "
+                         f"Waves={water_conditions.wave_activity:.2f} | "
+                         f"Calm={water_conditions.calm_score:.2f}")
+            cv2.putText(frame_with_overlay, water_text, (10, frame_with_overlay.shape[0] - 20),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
         # --- g. Display the frame (only if SHOW_WINDOW is enabled) ---
         if SHOW_WINDOW:

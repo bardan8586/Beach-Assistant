@@ -83,3 +83,4 @@ class HeatmapDataResponse(BaseModel):
     data: HeatmapResponse
     message: Optional[str] = None
 
+

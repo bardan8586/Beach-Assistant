@@ -48,3 +48,4 @@ class HeatmapRepository:
             return HeatmapInDB(**heatmap_dict)
         return None
 
+

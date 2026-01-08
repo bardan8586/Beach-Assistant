@@ -9,6 +9,9 @@ ultralytics==8.0.232
 torch==2.1.0
 torchvision==0.16.0
 
+# Roboflow Integration (optional)
+requests>=2.31.0
+
 # Tracking (ByteTrack via Norfair)
 norfair==2.2.0
 

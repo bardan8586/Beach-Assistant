@@ -93,3 +93,4 @@ class SwimmersListResponse(BaseModel):
     count: int
     message: Optional[str] = None
 
+

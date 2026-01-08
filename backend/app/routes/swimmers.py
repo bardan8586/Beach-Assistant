@@ -46,3 +46,4 @@ async def get_swimmers(
             message=f"Error: {str(e)}"
         )
 
+

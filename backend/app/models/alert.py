@@ -106,3 +106,4 @@ class AlertsListResponse(BaseModel):
     count: int
     message: Optional[str] = None
 
+

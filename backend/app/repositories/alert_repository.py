@@ -80,3 +80,4 @@ class AlertRepository:
         
         return [AlertInDB(**a) for a in alerts]
 
+

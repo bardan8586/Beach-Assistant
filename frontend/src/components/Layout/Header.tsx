@@ -68,3 +68,4 @@ export default function Header({ selectedCamera, isConnected }: HeaderProps) {
   )
 }
 
+

@@ -22,3 +22,4 @@ export interface Camera {
   last_seen?: string;
 }
 
+
