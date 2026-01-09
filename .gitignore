@@ -178,6 +178,7 @@ htmlcov/
 # Exclude all .md files EXCEPT those in docs/ folder
 *.md
 !docs/**/*.md
+!README.md
 # Sphinx documentation
 docs/_build/
 
