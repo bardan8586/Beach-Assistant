@@ -175,45 +175,58 @@ try:
 
         # --- b. Detect swimmers ---
         # Use multi-scale detection: lower confidence for far objects
-        # First pass: normal confidence for close objects
-        if isinstance(yolo_model, Detector):
-            raw_detections = yolo_model.detect_people(frame, conf_thres=0.5)
-            # Second pass: lower confidence for far/small objects
-            far_detections = yolo_model.detect_people(frame, conf_thres=0.3, min_size=20)
-            # Combine and deduplicate (keep higher confidence if overlap)
-            all_detections = raw_detections + far_detections
-            # Simple deduplication: if boxes overlap significantly, keep higher confidence
-            filtered_detections = []
-            for det in all_detections:
-                x1, y1, x2, y2, conf = det
-                is_duplicate = False
-                for existing in filtered_detections:
-                    ex1, ey1, ex2, ey2, econf = existing
-                    # Check overlap
-                    overlap_x = max(0, min(x2, ex2) - max(x1, ex1))
-                    overlap_y = max(0, min(y2, ey2) - max(y1, ey1))
-                    overlap_area = overlap_x * overlap_y
+        try:
+            # First pass: normal confidence for close objects
+            if isinstance(yolo_model, Detector):
+                raw_detections = yolo_model.detect_people(frame, conf_thres=0.5)
+                # Second pass: lower confidence for far/small objects
+                far_detections = yolo_model.detect_people(frame, conf_thres=0.3, min_size=20)
+                # Combine and deduplicate using proper IoU calculation
+                all_detections = raw_detections + far_detections
+                # Improved deduplication using IoU (Intersection over Union)
+                filtered_detections = []
+                for det in all_detections:
+                    x1, y1, x2, y2, conf = det
+                    is_duplicate = False
                     box_area = (x2 - x1) * (y2 - y1)
-                    if overlap_area > box_area * 0.5:  # 50% overlap
-                        if conf > econf:
-                            filtered_detections.remove(existing)
-                        else:
-                            is_duplicate = True
-                        break
-                if not is_duplicate:
-                    filtered_detections.append(det)
-            raw_detections = filtered_detections
-        else:
-            raw_detections = detect_people(yolo_model, frame, conf_thres=0.5)
-        # Format: [(x1, y1, x2, y2, conf), ...]
-        
-        # --- b.1 Apply filters to improve accuracy ---
-        detections = apply_all_filters(
-            raw_detections, 
-            frame, 
-            FRAME_SHAPE,
-            strict_mode=False  # Don't require water detection (too strict for some videos)
-        )
+                    
+                    for existing in filtered_detections:
+                        ex1, ey1, ex2, ey2, econf = existing
+                        # Calculate IoU
+                        intersection_x = max(0, min(x2, ex2) - max(x1, ex1))
+                        intersection_y = max(0, min(y2, ey2) - max(y1, ey1))
+                        intersection_area = intersection_x * intersection_y
+                        
+                        existing_area = (ex2 - ex1) * (ey2 - ey1)
+                        union_area = box_area + existing_area - intersection_area
+                        iou = intersection_area / union_area if union_area > 0 else 0
+                        
+                        # If IoU > 0.5, consider it a duplicate
+                        if iou > 0.5:
+                            if conf > econf:
+                                filtered_detections.remove(existing)
+                            else:
+                                is_duplicate = True
+                            break
+                    
+                    if not is_duplicate:
+                        filtered_detections.append(det)
+                raw_detections = filtered_detections
+            else:
+                raw_detections = detect_people(yolo_model, frame, conf_thres=0.5)
+            # Format: [(x1, y1, x2, y2, conf), ...]
+            
+            # --- b.1 Apply filters to improve accuracy ---
+            detections = apply_all_filters(
+                raw_detections, 
+                frame, 
+                FRAME_SHAPE,
+                strict_mode=False  # Don't require water detection (too strict for some videos)
+            )
+        except Exception as e:
+            if frame_idx % 60 == 0:  # Log errors occasionally
+                print(f"⚠️  Detection error: {e}")
+            detections = []  # Continue with empty detections
 
         # --- c. Track swimmers ---
         tracked_people = tracker.update(detections, timestamp=frame_timestamp)
@@ -343,13 +356,14 @@ try:
         # --- d. Update heatmap ---
         heatmap_acc.update(tracked_people, frame_idx)
 
-        # --- e. Draw scene geometry and water zones overlay ---
-        if SHOW_WINDOW:  # Only draw if showing window
-            # Update scene geometry periodically
-            if frame_idx % 30 == 0:  # Update every 30 frames
-                scene_geometry = scene_analyzer.analyze_scene(frame)
-                water_analyzer.update_shore_line(scene_geometry.shore_line_y)
-            
+        # --- e. Update scene geometry periodically (for both web and window mode) ---
+        # Update scene geometry periodically to adapt to changing conditions
+        if frame_idx % 30 == 0:  # Update every 30 frames
+            scene_geometry = scene_analyzer.analyze_scene(frame)
+            water_analyzer.update_shore_line(scene_geometry.shore_line_y)
+        
+        # --- e.1 Draw scene geometry and water zones overlay (only if showing window) ---
+        if SHOW_WINDOW:
             # Draw scene geometry (shore line, horizon)
             frame = scene_analyzer.draw_scene_geometry(frame, scene_geometry)
             # Draw water zones

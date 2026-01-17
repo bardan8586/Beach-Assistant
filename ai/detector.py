@@ -101,33 +101,40 @@ class Detector:
     
     def _detect_yolo(self, frame, conf_thres: float, iou_thres: float, 
                     imgsz: Optional[int] = None) -> List[Tuple[int, int, int, int, float]]:
-        """Run YOLOv8 detection."""
-        # Use larger image size for better detection of small/far objects
-        if imgsz is None:
-            imgsz = max(frame.shape[:2])  # Use larger dimension
-        
-        results = self.model(
-            frame,
-            conf=conf_thres,
-            iou=iou_thres,
-            classes=[0],  # COCO class index for 'person'
-            verbose=False,
-            device=self.model.device,
-            imgsz=imgsz  # Larger size helps detect far objects
-        )
-        
-        result = results[0]
-        detections = []
-        
-        for box, conf, cls in zip(result.boxes.xyxy.cpu().numpy(),
-                                  result.boxes.conf.cpu().numpy(),
-                                  result.boxes.cls.cpu().numpy()):
-            if int(cls) != 0:
-                continue
-            x1, y1, x2, y2 = map(int, box)
-            detections.append((x1, y1, x2, y2, float(conf)))
-        
-        return detections
+        """Run YOLOv8 detection with adaptive image sizing."""
+        try:
+            # Use larger image size for better detection of small/far objects
+            # Adaptive sizing: use 1.5x the larger dimension for better far object detection
+            if imgsz is None:
+                base_size = max(frame.shape[:2])
+                # Scale up for better small object detection, but cap at 1280 to avoid memory issues
+                imgsz = min(int(base_size * 1.5), 1280)
+            
+            results = self.model(
+                frame,
+                conf=conf_thres,
+                iou=iou_thres,
+                classes=[0],  # COCO class index for 'person'
+                verbose=False,
+                device=self.model.device,
+                imgsz=imgsz  # Larger size helps detect far objects
+            )
+            
+            result = results[0]
+            detections = []
+            
+            for box, conf, cls in zip(result.boxes.xyxy.cpu().numpy(),
+                                      result.boxes.conf.cpu().numpy(),
+                                      result.boxes.cls.cpu().numpy()):
+                if int(cls) != 0:
+                    continue
+                x1, y1, x2, y2 = map(int, box)
+                detections.append((x1, y1, x2, y2, float(conf)))
+            
+            return detections
+        except Exception as e:
+            print(f"⚠️  Detection error: {e}")
+            return []  # Return empty list on error instead of crashing
     
     def _detect_roboflow(self, frame, conf_thres: float) -> List[Tuple[int, int, int, int, float]]:
         """Run Roboflow Inference API detection."""

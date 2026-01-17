@@ -29,16 +29,21 @@ class SceneAnalyzer:
     Analyzes beach scene to understand geometry and context.
     """
     
-    def __init__(self, frame_shape: Tuple[int, int]):
+    def __init__(self, frame_shape: Tuple[int, int], smoothing_window: int = 5):
         """
         Initialize scene analyzer.
         
         Args:
             frame_shape: (height, width) of frames
+            smoothing_window: Number of frames to average for temporal smoothing
         """
         self.frame_h, self.frame_w = frame_shape
         self.cached_geometry: Optional[SceneGeometry] = None
         self.frame_count = 0
+        self.smoothing_window = smoothing_window
+        # Store recent shore line detections for temporal smoothing
+        self.shore_line_history: List[int] = []
+        self.horizon_history: List[int] = []
     
     def detect_shore_line(self, frame: np.ndarray) -> Optional[int]:
         """
@@ -182,6 +187,20 @@ class SceneAnalyzer:
         
         # Detect horizon
         horizon_y = self.detect_horizon(frame)
+        
+        # Temporal smoothing: average recent detections for stability
+        if shore_y is not None:
+            self.shore_line_history.append(shore_y)
+            if len(self.shore_line_history) > self.smoothing_window:
+                self.shore_line_history.pop(0)
+            # Use median for robustness against outliers
+            shore_y = int(np.median(self.shore_line_history))
+        
+        if horizon_y is not None:
+            self.horizon_history.append(horizon_y)
+            if len(self.horizon_history) > self.smoothing_window:
+                self.horizon_history.pop(0)
+            horizon_y = int(np.median(self.horizon_history))
         
         # If shore not detected, use fallback (bottom 30% of frame)
         if shore_y is None:
