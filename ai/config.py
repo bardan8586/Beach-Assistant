@@ -7,6 +7,14 @@ Set these via environment variables or modify defaults here.
 import os
 from pathlib import Path
 
+# ===== System Mode Configuration =====
+# Mode: "playback" (uploaded videos, can pause/replay) or "live" (real-time camera, no replay)
+SYSTEM_MODE = os.getenv("SYSTEM_MODE", "playback")  # Default: playback for development/training
+
+# Validate system mode
+if SYSTEM_MODE not in ["playback", "live"]:
+    raise ValueError(f"SYSTEM_MODE must be 'playback' or 'live', got: {SYSTEM_MODE}")
+
 # ===== Detection Configuration =====
 # Detector type: "yolo" (local YOLOv8) or "roboflow" (Roboflow Inference API)
 DETECTOR_TYPE = os.getenv("DETECTOR_TYPE", "yolo")

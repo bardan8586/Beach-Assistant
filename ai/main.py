@@ -50,6 +50,12 @@ DECAY = 0.98                 # How quickly heatmap "forgets" old activity (1.0=n
 GAUSS_SIGMA = 12             # Blur for heatmap overlay
 LOG_FILE = "tracking_log.csv"
 
+# System mode configuration
+SYSTEM_MODE = os.getenv("SYSTEM_MODE", "playback")  # "playback" or "live"
+if SYSTEM_MODE not in ["playback", "live"]:
+    print(f"⚠️  Invalid SYSTEM_MODE: {SYSTEM_MODE}, defaulting to 'playback'")
+    SYSTEM_MODE = "playback"
+
 # Backend API configuration
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 CAMERA_ID = os.getenv("CAMERA_ID", "cam_001")
@@ -152,6 +158,7 @@ current_fps = 0
 print("\n" + "="*60)
 print("🏖️  BEACH SAFETY AI - FULL PIPELINE RUNNING")
 print("="*60)
+print(f"Mode: {SYSTEM_MODE.upper()}")
 print("Press 'q' or ESC to quit")
 print("="*60 + "\n")
 
@@ -280,61 +287,67 @@ try:
         # --- c.1 Send data to backend API (every N frames) ---
         if SEND_TO_BACKEND and frame_idx % BACKEND_SEND_INTERVAL == 0:
             try:
+                from datetime import datetime
+                
+                # Build swimmers list in FrameResult format
                 swimmers_data = []
                 for person in tracked_people:
                     x1, y1, x2, y2 = person.bbox
-                    # Get first_seen and last_seen from tracker
-                    first_seen_ts = tracker.first_seen.get(person.track_id, frame_timestamp)
-                    last_seen_ts = tracker.last_seen.get(person.track_id, frame_timestamp)
-                    
-                    # Convert to ISO string if needed
-                    from datetime import datetime
-                    if isinstance(first_seen_ts, (int, float)):
-                        first_seen_str = datetime.fromtimestamp(first_seen_ts).isoformat()
-                    else:
-                        first_seen_str = first_seen_ts
-                    
-                    if isinstance(last_seen_ts, (int, float)):
-                        last_seen_str = datetime.fromtimestamp(last_seen_ts).isoformat()
-                    else:
-                        last_seen_str = last_seen_ts
                     
                     # Get additional analysis data
                     risk_score = risk_engine.get_risk_score(person.track_id)
                     zone = water_analyzer.get_zone_for_bbox(person.bbox)
                     motion_metrics = behavior_analyzer.get_motion_metrics(person.track_id)
+                    pattern = behavior_analyzer.get_pattern(person.track_id)
+                    
+                    # Get time in water (seconds)
+                    first_seen_ts = tracker.first_seen.get(person.track_id, frame_timestamp)
+                    time_in_water = frame_timestamp - first_seen_ts if isinstance(first_seen_ts, (int, float)) else 0.0
                     
                     swimmer_data = {
                         "track_id": person.track_id,
                         "bbox": {
-                            "x1": int(x1),
-                            "y1": int(y1),
-                            "x2": int(x2),
-                            "y2": int(y2)
+                            "x": int(x1),
+                            "y": int(y1),
+                            "w": int(x2 - x1),
+                            "h": int(y2 - y1)
                         },
                         "confidence": float(person.confidence),
-                        "first_seen": first_seen_str,
-                        "last_seen": last_seen_str,
-                        "zone": zone.value if zone else "unknown",
-                        "risk_score": risk_score.total_score if risk_score else 0.0,
-                        "risk_level": risk_score.level.value if risk_score else "low"
+                        "risk_score": int(risk_score.total_score) if risk_score else 0,
+                        "risk_level": risk_score.level.value.upper() if risk_score else "LOW",
+                        "behavior": pattern.value.upper() if pattern else "NORMAL",
+                        "zone": zone.value.upper() if zone else "SAFE",
+                        "time_in_water": float(time_in_water),
+                        "velocity": float(motion_metrics.velocity) if motion_metrics else 0.0
                     }
                     
                     swimmers_data.append(swimmer_data)
                 
-                # Add water conditions to payload
+                # Build FrameResult payload
                 payload = {
+                    "video_id": "realtime",  # For live, "realtime"; for playback, use actual video_id
                     "camera_id": CAMERA_ID,
-                    "timestamp": frame_timestamp,
+                    "frame_index": frame_idx,
+                    "timestamp_ms": int(frame_timestamp * 1000),  # Convert seconds to milliseconds
+                    "video_width": FRAME_SHAPE[1],  # width
+                    "video_height": FRAME_SHAPE[0],  # height
                     "swimmers": swimmers_data,
-                    "water_conditions": {
-                        "has_water": water_conditions.has_water,
-                        "water_confidence": water_conditions.water_confidence,
-                        "visibility": water_conditions.visibility_estimate,
-                        "wave_activity": water_conditions.wave_activity,
-                        "calm_score": water_conditions.calm_score
+                    "scene": {
+                        "shore_line_y": scene_geometry.shore_line_y if scene_geometry else None,
+                        "horizon_y": scene_geometry.horizon_y if scene_geometry else None,
+                        "water_percentage": water_conditions.water_confidence * 100 if water_conditions else 0.0,
+                        "visibility": water_conditions.visibility_estimate if water_conditions else 0.0,
+                        "wave_activity": water_conditions.wave_activity if water_conditions else 0.0,
+                        "calm_score": water_conditions.calm_score if water_conditions else 0.0
                     },
-                    "active_alerts": len(active_alerts)
+                    "metrics": {
+                        "fps": current_fps,
+                        "latency_ms": int((time.time() - frame_timestamp) * 1000),
+                        "detections_raw": len(detections),
+                        "detections_filtered": len(filtered),
+                        "active_tracks": len(tracked_people)
+                    },
+                    "system_mode": SYSTEM_MODE
                 }
                 
                 response = requests.post(
@@ -344,7 +357,7 @@ try:
                 )
                 if response.status_code == 200:
                     if frame_idx % 30 == 0:  # Log every 30 frames
-                        print(f"✅ Sent {len(swimmers_data)} swimmers to backend (Frame {frame_idx}, Camera: {CAMERA_ID})")
+                        print(f"✅ Sent FrameResult: {len(swimmers_data)} swimmers, {FRAME_SHAPE[1]}x{FRAME_SHAPE[0]} (Frame {frame_idx})")
             except requests.exceptions.ConnectionError:
                 if frame_idx == 0 or frame_idx % 60 == 0:  # Warn on first frame and every 60 frames
                     print(f"⚠️  Backend not reachable at {BACKEND_URL}")

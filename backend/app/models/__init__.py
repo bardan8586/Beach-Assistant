@@ -50,6 +50,14 @@ from app.models.camera import (
     CameraLocation
 )
 
+from app.models.frame_result import (
+    FrameResult,
+    SwimmerData,
+    BoundingBox as FrameBoundingBox,
+    SceneData,
+    ProcessingMetrics
+)
+
 __all__ = [
     # Swimmer models
     "SwimmerBase", "SwimmerCreate", "SwimmerUpdate", "SwimmerInDB",
@@ -68,6 +76,10 @@ __all__ = [
     "CameraBase", "CameraCreate", "CameraUpdate", "CameraInDB",
     "CameraResponse", "CamerasListResponse",
     "CameraStatus", "CameraLocation",
+    
+    # Frame result models (unified schema)
+    "FrameResult", "SwimmerData", "FrameBoundingBox",
+    "SceneData", "ProcessingMetrics",
 ]
 
 

@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     # Expected frame rate from AI pipeline
     EXPECTED_FPS: int = 10
     
+    # -------------------- System Mode Configuration --------------------
+    # Mode: "playback" (uploaded videos) or "live" (real-time camera feeds)
+    SYSTEM_MODE: str = "playback"
+    
     # -------------------- Server Configuration --------------------
     HOST: str = "0.0.0.0"
     PORT: int = 8000

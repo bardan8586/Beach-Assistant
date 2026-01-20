@@ -12,6 +12,8 @@ from typing import List, Optional
 from app.services import swimmer_service, websocket_service
 from app.repositories import CameraRepository
 from app.database import database
+from app.models import FrameResult
+from app.utils import results_storage
 import logging
 
 logger = logging.getLogger(__name__)
@@ -19,8 +21,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/data", tags=["ingestion"])
 
 
+# Legacy request format (for backward compatibility)
 class IngestRequest(BaseModel):
-    """Request body for AI pipeline data"""
+    """Request body for AI pipeline data (LEGACY - use FrameResult instead)"""
     camera_id: str
     timestamp: float
     swimmers: List[dict]  # List of {track_id, bbox, confidence}
@@ -28,51 +31,64 @@ class IngestRequest(BaseModel):
 
 
 @router.post("/ingest")
-async def ingest_data(request: IngestRequest):
+async def ingest_data(frame_result: FrameResult):
     """
-    Receive data from AI pipeline
+    Receive FrameResult from AI pipeline
     
-    This endpoint is called by the AI main.py script to send:
-    - Swimmer detections with bounding boxes
-    - Heatmap data (optional)
-    - Frame timestamp
+    This endpoint is called by the AI main.py script to send complete frame analysis:
+    - Video dimensions (for coordinate scaling)
+    - Frame index and timestamp (for sync)
+    - Swimmer detections with bounding boxes, risk, behavior
+    - Scene analysis (shore, horizon, water conditions)
+    - Processing metrics
     
     The data is:
-    1. Stored in MongoDB
-    2. Broadcast via WebSocket to connected clients
+    1. Validated against FrameResult schema
+    2. Stored to results.jsonl for playback
+    3. Broadcast via WebSocket to connected clients (for real-time display)
     """
     try:
+        # Store frame result for playback (Task 1.2)
+        try:
+            results_storage.write_frame_result(
+                video_id=frame_result.video_id,
+                frame_result=frame_result.to_websocket_message()
+            )
+        except Exception as e:
+            logger.warning(f"Failed to store frame result: {e}")
+        
         # Update camera last_seen
         if database.database is not None:
             try:
                 camera_repo = CameraRepository(database.database)
-                await camera_repo.update_last_seen(request.camera_id)
+                await camera_repo.update_last_seen(frame_result.camera_id)
             except Exception as e:
                 logger.warning(f"Failed to update camera last_seen: {e}")
         
-        # Process swimmer detections
-        swimmers = await swimmer_service.process_detections(
-            camera_id=request.camera_id,
-            swimmers=request.swimmers,
-            timestamp=request.timestamp
+        # Broadcast FrameResult to WebSocket clients (entire frame result)
+        await websocket_service.broadcast_frame_result(
+            camera_id=frame_result.camera_id,
+            frame_result=frame_result.to_websocket_message()
         )
         
-        # Broadcast to WebSocket clients
-        await websocket_service.broadcast_swimmer_update(
-            camera_id=request.camera_id,
-            swimmers=[s.model_dump() for s in swimmers],
-            timestamp=request.timestamp  # Pass timestamp from AI pipeline
+        logger.info(
+            f"Ingested FrameResult: camera={frame_result.camera_id}, "
+            f"frame={frame_result.frame_index}, swimmers={len(frame_result.swimmers)}, "
+            f"dims={frame_result.video_width}x{frame_result.video_height}"
         )
-        
-        logger.info(f"Ingested data: camera={request.camera_id}, swimmers={len(swimmers)}")
         
         return {
             "success": True,
-            "message": f"Processed {len(swimmers)} swimmers",
-            "camera_id": request.camera_id
+            "message": f"Processed frame {frame_result.frame_index} with {len(frame_result.swimmers)} swimmers",
+            "camera_id": frame_result.camera_id,
+            "frame_index": frame_result.frame_index,
+            "video_dimensions": {
+                "width": frame_result.video_width,
+                "height": frame_result.video_height
+            }
         }
         
     except Exception as e:
-        logger.error(f"Error ingesting data: {e}")
+        logger.error(f"Error ingesting FrameResult: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 

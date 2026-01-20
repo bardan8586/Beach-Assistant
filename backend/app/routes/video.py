@@ -12,7 +12,9 @@ from pathlib import Path
 import uuid
 import subprocess
 import logging
+import cv2
 from typing import Optional
+from app.utils import results_storage
 
 logger = logging.getLogger(__name__)
 
@@ -38,22 +40,52 @@ async def upload_video(file: UploadFile = File(...)):
     try:
         # Generate unique video ID
         video_id = str(uuid.uuid4())
+        
+        # Create video directory structure (Task 1.2)
+        video_dir = results_storage.create_video_directory(video_id)
+        
+        # Save video file in the video directory
         file_extension = Path(file.filename).suffix or ".mp4"
-        video_filename = f"{video_id}{file_extension}"
-        video_path = UPLOAD_DIR / video_filename
+        video_filename = f"video{file_extension}"
+        video_path = video_dir / video_filename
         
         # Save uploaded file
         with open(video_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        logger.info(f"Video uploaded: {video_id} ({file.filename})")
+        # Extract video metadata
+        try:
+            cap = cv2.VideoCapture(str(video_path))
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            duration = frame_count / fps if fps > 0 else 0
+            cap.release()
+            
+            # Save metadata (Task 1.2)
+            results_storage.save_metadata(video_id, {
+                "filename": file.filename,
+                "width": width,
+                "height": height,
+                "fps": fps,
+                "frame_count": frame_count,
+                "duration_seconds": duration,
+                "size_bytes": os.path.getsize(video_path)
+            })
+        except Exception as e:
+            logger.warning(f"Failed to extract video metadata: {e}")
+        
+        logger.info(f"Video uploaded: {video_id} ({file.filename}) - {width}x{height}, {duration:.1f}s")
         
         return {
             "success": True,
             "video_id": video_id,
             "filename": file.filename,
             "video_path": str(video_path),
-            "size": os.path.getsize(video_path)
+            "size": os.path.getsize(video_path),
+            "dimensions": {"width": width, "height": height},
+            "duration": duration
         }
         
     except Exception as e:
@@ -70,10 +102,15 @@ async def process_video(video_id: str, camera_id: Optional[str] = None):
     and send tracking data to the backend in real-time.
     """
     try:
-        # Find video file
-        video_files = list(UPLOAD_DIR.glob(f"{video_id}.*"))
-        if not video_files:
+        # Find video file in video directory (Task 1.2)
+        video_dir = results_storage.get_video_dir(video_id)
+        if not video_dir.exists():
             raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Look for video file
+        video_files = list(video_dir.glob("video.*"))
+        if not video_files:
+            raise HTTPException(status_code=404, detail="Video file not found in directory")
         
         video_path = video_files[0]
         
@@ -171,6 +208,94 @@ async def get_processing_status(video_id: str):
             "camera_id": job["camera_id"],
             "return_code": process.returncode
         }
+
+
+@router.get("/{video_id}/metadata")
+async def get_video_metadata(video_id: str):
+    """
+    Get video metadata (dimensions, duration, etc.)
+    
+    Returns metadata saved during upload, including:
+    - filename: Original filename
+    - width, height: Video dimensions
+    - fps: Frames per second
+    - duration_seconds: Total duration
+    - frame_count: Total number of frames
+    """
+    try:
+        metadata = results_storage.load_metadata(video_id)
+        
+        if metadata is None:
+            raise HTTPException(status_code=404, detail="Video metadata not found")
+        
+        return {
+            "success": True,
+            "video_id": video_id,
+            "metadata": metadata
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error loading metadata: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to load metadata: {str(e)}")
+
+
+@router.get("/{video_id}/results")
+async def get_video_results(
+    video_id: str,
+    from_ms: Optional[int] = None,
+    to_ms: Optional[int] = None
+):
+    """
+    Get processed FrameResults for a video (Task 1.3)
+    
+    This endpoint returns pre-computed AI results for playback without re-processing.
+    
+    Query Parameters:
+        from_ms: Start timestamp in milliseconds (inclusive)
+        to_ms: End timestamp in milliseconds (inclusive)
+        
+    Returns:
+        - video_id: Video identifier
+        - frame_count: Number of frames in response
+        - results: Array of FrameResult objects
+        
+    Why lifeguards need this:
+        - Instant replay of incidents without waiting for AI
+        - Scrub through video and see matching detections
+        - Review training scenarios
+    """
+    try:
+        # Check if video has results
+        if not results_storage.has_results(video_id):
+            raise HTTPException(
+                status_code=404, 
+                detail="No results found for this video. Has it been processed?"
+            )
+        
+        # Read results (with optional time range)
+        if from_ms is not None or to_ms is not None:
+            results = results_storage.read_results_range(video_id, from_ms, to_ms)
+            logger.info(f"Returning {len(results)} results for range [{from_ms}, {to_ms}]")
+        else:
+            results = results_storage.read_all_results(video_id)
+            logger.info(f"Returning all {len(results)} results")
+        
+        return {
+            "success": True,
+            "video_id": video_id,
+            "frame_count": len(results),
+            "from_ms": from_ms,
+            "to_ms": to_ms,
+            "results": results
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error loading results: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to load results: {str(e)}")
 
 
 @router.get("/list")

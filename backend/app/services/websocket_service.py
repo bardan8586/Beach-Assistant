@@ -135,6 +135,28 @@ class WebSocketService:
             "data": alert
         }
         await self.broadcast_to_camera(camera_id, message)
+    
+    async def broadcast_frame_result(self, camera_id: str, frame_result: dict):
+        """
+        Broadcast complete FrameResult (NEW UNIFIED FORMAT)
+        
+        This is the NEW way to send data. Contains everything:
+        - Video dimensions (for coordinate scaling)
+        - Frame index & timestamp (for sync)
+        - Swimmers with bounding boxes
+        - Scene analysis
+        - Metrics
+        
+        Args:
+            camera_id: Camera identifier
+            frame_result: FrameResult as dict (from frame_result.to_websocket_message())
+        """
+        message = {
+            "type": "frame_result",
+            "camera_id": camera_id,
+            "data": frame_result
+        }
+        await self.broadcast_to_camera(camera_id, message)
 
 
 # Global WebSocket service instance

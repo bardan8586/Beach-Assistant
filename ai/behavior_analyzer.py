@@ -285,4 +285,17 @@ class BehaviorAnalyzer:
             MotionMetrics or None if not found
         """
         return self.current_metrics.get(track_id)
+    
+    def get_pattern(self, track_id: int) -> Optional[MovementPattern]:
+        """
+        Get current movement pattern for a track.
+        
+        Args:
+            track_id: Track ID
+            
+        Returns:
+            MovementPattern or None if track not found
+        """
+        metrics = self.current_metrics.get(track_id)
+        return metrics.pattern if metrics else None
 

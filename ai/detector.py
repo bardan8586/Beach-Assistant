@@ -101,14 +101,12 @@ class Detector:
     
     def _detect_yolo(self, frame, conf_thres: float, iou_thres: float, 
                     imgsz: Optional[int] = None) -> List[Tuple[int, int, int, int, float]]:
-        """Run YOLOv8 detection with adaptive image sizing."""
+        """Run YOLOv8 detection."""
         try:
-            # Use larger image size for better detection of small/far objects
-            # Adaptive sizing: use 1.5x the larger dimension for better far object detection
+            # Use default image size (faster) - YOLOv8 handles scaling internally
+            # Only use larger size if explicitly requested
             if imgsz is None:
-                base_size = max(frame.shape[:2])
-                # Scale up for better small object detection, but cap at 1280 to avoid memory issues
-                imgsz = min(int(base_size * 1.5), 1280)
+                imgsz = 640  # Default YOLOv8 size for speed
             
             results = self.model(
                 frame,
@@ -117,7 +115,7 @@ class Detector:
                 classes=[0],  # COCO class index for 'person'
                 verbose=False,
                 device=self.model.device,
-                imgsz=imgsz  # Larger size helps detect far objects
+                imgsz=imgsz
             )
             
             result = results[0]
