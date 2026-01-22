@@ -15,6 +15,15 @@ SYSTEM_MODE = os.getenv("SYSTEM_MODE", "playback")  # Default: playback for deve
 if SYSTEM_MODE not in ["playback", "live"]:
     raise ValueError(f"SYSTEM_MODE must be 'playback' or 'live', got: {SYSTEM_MODE}")
 
+# ===== Performance Optimization =====
+# Frame skipping: Process every Nth frame (1=all frames, 2=every other, 3=every third)
+# Higher = faster but less temporal resolution
+FRAME_SKIP = int(os.getenv("FRAME_SKIP", "2"))  # Default: skip every other frame (2x speed)
+
+# Multi-scale detection: Run 2 passes (normal + low confidence for far objects)
+# Disable for 2x speed improvement
+MULTI_SCALE_DETECTION = os.getenv("MULTI_SCALE_DETECTION", "false").lower() == "true"
+
 # ===== Detection Configuration =====
 # Detector type: "yolo" (local YOLOv8) or "roboflow" (Roboflow Inference API)
 DETECTOR_TYPE = os.getenv("DETECTOR_TYPE", "yolo")

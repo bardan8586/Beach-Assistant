@@ -52,10 +52,11 @@ async def ingest_data(frame_result: FrameResult):
         try:
             results_storage.write_frame_result(
                 video_id=frame_result.video_id,
-                frame_result=frame_result.to_websocket_message()
+                frame_result=frame_result.model_dump()  # Convert Pydantic model to dict
             )
+            logger.debug(f"✅ Saved frame {frame_result.frame_index} to storage")
         except Exception as e:
-            logger.warning(f"Failed to store frame result: {e}")
+            logger.error(f"❌ Failed to store frame result: {e}")
         
         # Update camera last_seen
         if database.database is not None:
@@ -68,7 +69,7 @@ async def ingest_data(frame_result: FrameResult):
         # Broadcast FrameResult to WebSocket clients (entire frame result)
         await websocket_service.broadcast_frame_result(
             camera_id=frame_result.camera_id,
-            frame_result=frame_result.to_websocket_message()
+            frame_result=frame_result.model_dump()  # Convert Pydantic model to dict
         )
         
         logger.info(

@@ -178,18 +178,25 @@ try:
                 break
             frame_timestamp = time.time()
 
+        # ⚡ PERFORMANCE: Frame skipping (2x-3x speedup)
+        if FRAME_SKIP > 1 and frame_idx % FRAME_SKIP != 0:
+            continue  # Skip this frame, process next one
+
         orig_frame = frame.copy()
 
         # --- b. Detect swimmers ---
-        # Use multi-scale detection: lower confidence for far objects
         try:
-            # First pass: normal confidence for close objects
+            # ⚡ PERFORMANCE: Conditional multi-scale detection
             if isinstance(yolo_model, Detector):
+                # First pass: normal confidence
                 raw_detections = yolo_model.detect_people(frame, conf_thres=0.5)
-                # Second pass: lower confidence for far/small objects
-                far_detections = yolo_model.detect_people(frame, conf_thres=0.3, min_size=20)
-                # Combine and deduplicate using proper IoU calculation
-                all_detections = raw_detections + far_detections
+                
+                # Second pass: ONLY if multi-scale is enabled (slow but catches far swimmers)
+                if MULTI_SCALE_DETECTION:
+                    far_detections = yolo_model.detect_people(frame, conf_thres=0.3, min_size=20)
+                    all_detections = raw_detections + far_detections
+                else:
+                    all_detections = raw_detections
                 # Improved deduplication using IoU (Intersection over Union)
                 filtered_detections = []
                 for det in all_detections:
@@ -343,8 +350,8 @@ try:
                     "metrics": {
                         "fps": current_fps,
                         "latency_ms": int((time.time() - frame_timestamp) * 1000),
-                        "detections_raw": len(detections),
-                        "detections_filtered": len(filtered),
+                        "detections_raw": len(raw_detections),
+                        "detections_filtered": len(detections),
                         "active_tracks": len(tracked_people)
                     },
                     "system_mode": SYSTEM_MODE
@@ -382,52 +389,72 @@ try:
             # Draw water zones
             frame = water_analyzer.draw_zones(frame, alpha=0.4)
         
-        # --- e.1 Draw bounding boxes with risk-based colors ---
-        for person in tracked_people:
+        # --- e.1 Draw bounding boxes with LIFEGUARD-FRIENDLY risk hierarchy ---
+        # Sort by risk (HIGH first) so they're drawn on top
+        swimmers_by_risk = sorted(tracked_people, 
+                                 key=lambda p: risk_engine.get_risk_score(p.track_id).total_score if risk_engine.get_risk_score(p.track_id) else 0)
+        
+        for person in swimmers_by_risk:
             x1, y1, x2, y2 = person.bbox
             
             # Get risk score and zone
             risk_score = risk_engine.get_risk_score(person.track_id)
             zone = water_analyzer.get_zone_for_bbox(person.bbox)
             
-            # Color based on risk level
-            if risk_score and risk_score.level == RiskLevel.HIGH:
-                color = (0, 0, 255)  # Red - high risk
-            elif risk_score and risk_score.level == RiskLevel.MEDIUM:
-                color = (0, 165, 255)  # Orange - medium risk
-            elif zone == WaterZone.DANGER:
-                color = (0, 255, 255)  # Yellow - in danger zone
+            # 🎨 CLEAR VISUAL HIERARCHY for Lifeguards
+            is_high_risk = risk_score and risk_score.level == RiskLevel.HIGH
+            is_medium_risk = risk_score and risk_score.level == RiskLevel.MEDIUM
+            
+            # Color: Simple Red/Yellow/Green
+            if is_high_risk:
+                color = (0, 0, 255)  # 🔴 RED - URGENT
+                thickness = 4  # Extra thick for visibility
+                font_scale = 1.0  # Bigger label
+            elif is_medium_risk:
+                color = (0, 200, 255)  # 🟡 ORANGE - CAUTION
+                thickness = 3
+                font_scale = 0.8
             else:
-                color = (0, 255, 0)  # Green - normal
+                color = (0, 255, 0)  # 🟢 GREEN - OK
+                thickness = 2
+                font_scale = 0.6
             
             # Draw bounding box
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
             
-            # Draw label with risk info
-            risk_text = ""
+            # 📝 SIMPLE LABEL: Just ID + Risk Level
             if risk_score:
-                risk_text = f" Risk:{risk_score.total_score:.0f}"
-            label = f"ID {person.track_id}{risk_text}"
-            cv2.putText(frame, label, (x1, y1-8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                label = f"#{person.track_id} {risk_score.level.value.upper()}"
+            else:
+                label = f"#{person.track_id}"
             
-            # Draw trajectory (last 15 points) - thicker lines for visibility
-            trajectory = behavior_analyzer.get_trajectory(person.track_id)
-            if len(trajectory) > 1:
-                points = [(p.x, p.y) for p in trajectory[-15:]]  # Show more points
-                for i in range(1, len(points)):
-                    # Use slightly brighter color for trajectory
-                    traj_color = tuple(min(255, c + 50) for c in color) if color != (0, 0, 255) else (255, 0, 255)  # Magenta for red
-                    cv2.line(frame, points[i-1], points[i], traj_color, 2)  # Thicker line (2 instead of 1)
+            # Label background for readability
+            (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)
+            cv2.rectangle(frame, (x1, y1 - label_h - 10), (x1 + label_w + 10, y1), color, -1)
+            cv2.putText(frame, label, (x1 + 5, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), 2)
+            
+            # 🎯 TRAJECTORY: Only show for MEDIUM/HIGH risk (reduce clutter)
+            if is_medium_risk or is_high_risk:
+                trajectory = behavior_analyzer.get_trajectory(person.track_id)
+                if len(trajectory) > 1:
+                    points = [(p.x, p.y) for p in trajectory[-10:]]  # Last 10 points only
+                    for i in range(1, len(points)):
+                        cv2.line(frame, points[i-1], points[i], color, 3 if is_high_risk else 2)
         
-        # --- e.2 Draw active alerts ---
+        # --- e.2 Draw active alerts - BIG and CLEAR for lifeguards ---
         active_alerts = risk_engine.get_active_alerts()
         if active_alerts:
-            alert_y = 60
-            for alert in active_alerts[:3]:  # Show max 3 alerts
-                alert_text = f"ALERT: Track {alert.track_id} - Risk {alert.total_score:.0f}"
+            # Sort by risk (highest first)
+            active_alerts = sorted(active_alerts, key=lambda a: a.total_score, reverse=True)
+            alert_y = 70
+            for i, alert in enumerate(active_alerts[:2]):  # Show TOP 2 only
+                alert_text = f"⚠️ SWIMMER #{alert.track_id} - {alert.level.value.upper()}"
+                # Big text with background
+                (text_w, text_h), _ = cv2.getTextSize(alert_text, cv2.FONT_HERSHEY_SIMPLEX, 1.2, 3)
+                cv2.rectangle(frame, (5, alert_y - text_h - 5), (text_w + 15, alert_y + 5), (0, 0, 200), -1)
                 cv2.putText(frame, alert_text, (10, alert_y), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-                alert_y += 30
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
+                alert_y += text_h + 15
 
         # --- f. Overlay heatmap on frame ---
         frame_with_overlay = heatmap_acc.render_overlay(frame, alpha=0.5)
