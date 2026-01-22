@@ -6,10 +6,12 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { WS_URL, WS_RECONNECT_INTERVAL } from '../utils/constants'
+import type { FrameResult } from '../types/frameResult'
 
 interface WebSocketMessage {
-  type: 'swimmers' | 'alert' | 'heatmap'
+  type: 'swimmers' | 'alert' | 'heatmap' | 'frame_result'
   data: any
+  frame_result?: FrameResult  // New standardized format
   timestamp: number | string  // Can be number (Unix) or ISO string
   camera_id: string
 }

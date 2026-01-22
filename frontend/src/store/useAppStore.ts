@@ -30,8 +30,10 @@ interface AppState {
   // UI State
   showBoundingBoxes: boolean
   showHeatmap: boolean
+  showZones: boolean
   toggleBoundingBoxes: () => void
   toggleHeatmap: () => void
+  toggleZones: () => void
 
   // Connection Status
   isConnected: boolean
@@ -46,6 +48,7 @@ export const useAppStore = create<AppState>((set) => ({
   alerts: [],
   showBoundingBoxes: true,
   showHeatmap: false,
+  showZones: true,  // Show water zones by default
   isConnected: false,
 
   // Camera actions
@@ -79,6 +82,8 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({ showBoundingBoxes: !state.showBoundingBoxes })),
   toggleHeatmap: () =>
     set((state) => ({ showHeatmap: !state.showHeatmap })),
+  toggleZones: () =>
+    set((state) => ({ showZones: !state.showZones })),
 
   // Connection actions
   setIsConnected: (isConnected) => set({ isConnected }),

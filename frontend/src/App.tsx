@@ -18,23 +18,32 @@ import { useAppStore } from './store/useAppStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import { apiService } from './services/api'
 import { videoService } from './services/videoService'
+import { playbackService } from './services/playbackService'
+import type { FrameResult } from './types/frameResult'
 
 function App() {
   const [uploadedVideo, setUploadedVideo] = useState<File | null>(null)
   const [videoUrl, setVideoUrl] = useState<string>('')
+  const [videoId, setVideoId] = useState<string | null>(null)
   const [processing, setProcessing] = useState(false)
   const [processingStatus, setProcessingStatus] = useState<string>('idle')
+  
+  // FrameResult data for playback mode
+  const [frameResults, setFrameResults] = useState<FrameResult[]>([])
+  const [playbackMode, setPlaybackMode] = useState(false)  // true = playback, false = live
   
   // Get data from store
   const { 
     swimmers, 
     showBoundingBoxes, 
     showHeatmap, 
+    showZones,
     selectedCamera,
     updateSwimmers,
     setIsConnected,
     toggleBoundingBoxes,
     toggleHeatmap,
+    toggleZones,
     setSelectedCamera
   } = useAppStore()
 
@@ -104,6 +113,8 @@ function App() {
   // Handle video file selection
   const handleVideoSelected = async (file: File) => {
     setUploadedVideo(file)
+    setFrameResults([])  // Clear previous results
+    setPlaybackMode(false)  // Start in live mode
     
     // Create object URL for preview
     const url = URL.createObjectURL(file)
@@ -113,6 +124,7 @@ function App() {
       // Upload video to backend
       setProcessingStatus('uploading')
       const uploadResult = await videoService.uploadVideo(file)
+      setVideoId(uploadResult.video_id)
       
       // Generate camera ID from video ID (use first 8 chars)
       const cameraId = `upload_${uploadResult.video_id.substring(0, 8)}`
@@ -141,6 +153,13 @@ function App() {
               clearInterval(statusInterval)
               setProcessingStatus('completed')
               setProcessing(false)
+              
+              // Auto-load playback data when processing completes
+              console.log('🎬 Loading playback data...')
+              const results = await playbackService.loadFrameResults(uploadResult.video_id)
+              setFrameResults(results)
+              setPlaybackMode(true)
+              console.log(`✅ Playback mode activated with ${results.length} frames`)
             }
           } catch (error) {
             console.error('Status check error:', error)
@@ -155,6 +174,21 @@ function App() {
       console.error('Error processing video:', error)
       setProcessingStatus('error')
       setProcessing(false)
+    }
+  }
+  
+  // Manual playback mode toggle
+  const loadPlaybackData = async () => {
+    if (!videoId) return
+    try {
+      console.log('🎬 Manually loading playback data...')
+      const results = await playbackService.loadFrameResults(videoId)
+      setFrameResults(results)
+      setPlaybackMode(true)
+      console.log(`✅ Loaded ${results.length} frames for playback`)
+    } catch (error) {
+      console.error('Failed to load playback data:', error)
+      alert('No playback data available yet. Wait for processing to complete.')
     }
   }
 
@@ -242,22 +276,37 @@ function App() {
                   {uploadedVideo ? 'Video Analysis' : 'Upload Video'}
                 </h2>
                 {uploadedVideo && (
-                  <div className="flex space-x-2">
+                  <div className="flex items-center space-x-3">
+                    {playbackMode && (
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-medium">
+                        🎬 PLAYBACK
+                      </span>
+                    )}
                     <button
                       onClick={toggleBoundingBoxes}
                       className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                         showBoundingBoxes
-                          ? 'bg-primary-600 text-white'
+                          ? 'bg-green-600 text-white shadow-lg'
                           : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                       }`}
                     >
                       {showBoundingBoxes ? '✓' : ''} Boxes
                     </button>
                     <button
+                      onClick={toggleZones}
+                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                        showZones
+                          ? 'bg-blue-600 text-white shadow-lg'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      {showZones ? '✓' : ''} Zones
+                    </button>
+                    <button
                       onClick={toggleHeatmap}
                       className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                         showHeatmap
-                          ? 'bg-primary-600 text-white'
+                          ? 'bg-purple-600 text-white shadow-lg'
                           : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                       }`}
                     >
@@ -272,15 +321,18 @@ function App() {
               ) : (
                 <div className="space-y-4">
                   <VideoPlayer
-                    swimmers={swimmers}
+                    frameResults={frameResults}
                     showBoundingBoxes={showBoundingBoxes}
                     showHeatmap={showHeatmap}
+                    showZones={showZones}
                     cameraId={selectedCamera}
                     videoUrl={videoUrl}
                     onToggleBoxes={toggleBoundingBoxes}
                     onToggleHeatmap={toggleHeatmap}
+                    onToggleZones={toggleZones}
                   />
                   
+                  {/* Processing Status */}
                   {processing && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                       <div className="flex items-center space-x-3">
@@ -293,6 +345,39 @@ function App() {
                         </div>
                       </div>
                     </div>
+                  )}
+                  
+                  {/* Playback Mode Indicator */}
+                  {playbackMode && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className="text-2xl">🎬</div>
+                          <div>
+                            <div className="font-medium text-green-900">Playback Mode</div>
+                            <div className="text-sm text-green-700">
+                              {frameResults.length} frames loaded | Pixel-perfect overlays active
+                            </div>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => setPlaybackMode(false)}
+                          className="px-3 py-1.5 bg-white border border-green-300 text-green-700 rounded text-sm hover:bg-green-50"
+                        >
+                          Exit Playback
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Load Playback Button */}
+                  {!playbackMode && !processing && processingStatus === 'completed' && (
+                    <button
+                      onClick={loadPlaybackData}
+                      className="w-full py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
+                    >
+                      🎬 Load Playback Mode (Instant Replay)
+                    </button>
                   )}
                 </div>
               )}
