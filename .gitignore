@@ -199,3 +199,4 @@ temp/
 # Keep empty directories
 !tests/data/.gitkeep
 !tests/models/.gitkeep
+backend/uploads/

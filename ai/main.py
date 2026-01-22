@@ -56,6 +56,10 @@ if SYSTEM_MODE not in ["playback", "live"]:
     print(f"⚠️  Invalid SYSTEM_MODE: {SYSTEM_MODE}, defaulting to 'playback'")
     SYSTEM_MODE = "playback"
 
+# Performance optimizations
+FRAME_SKIP = int(os.getenv("FRAME_SKIP", "2"))  # Process every Nth frame (1=all, 2=every other)
+MULTI_SCALE_DETECTION = os.getenv("MULTI_SCALE_DETECTION", "false").lower() == "true"
+
 # Backend API configuration
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 CAMERA_ID = os.getenv("CAMERA_ID", "cam_001")
