@@ -19,6 +19,7 @@ import csv
 import os
 import requests
 import json
+import numpy as np
 
 # --- Import pipeline components ---
 import sys
@@ -31,9 +32,13 @@ from tracker import PersonTracker
 from heatmap import HeatmapAccumulator
 from filter import apply_all_filters
 from water_analyzer import WaterAnalyzer, WaterZone
-from behavior_analyzer import BehaviorAnalyzer
+from behavior_analyzer import BehaviorAnalyzer, MovementPattern
 from risk_engine import RiskEngine, RiskLevel
 from scene_analyzer import SceneAnalyzer
+from pose_analyzer import PoseAnalyzer, SwimmingAction  # Pose-based drowning detection
+from advanced_tracker import AdvancedTracker  # Robust tracking for ocean conditions
+from temporal_analyzer import TemporalAnalyzer, SwimmerState  # Fatigue & panic progression
+from beach_calibration import BeachCalibration  # NEW: Learn beach-specific patterns
 
 # --------- Configurations ---------
 # For testing: use the test video
@@ -73,18 +78,25 @@ DETECTOR_TYPE = os.getenv("DETECTOR_TYPE", "yolo").lower()  # "yolo" or "roboflo
 MODEL_NAME = os.getenv("MODEL_NAME", "yolov8s.pt")  # Better default: small instead of nano
 
 print(f"Initializing detector: {DETECTOR_TYPE}...")
+# Enable pose estimation for drowning detection
+ENABLE_POSE = os.getenv("ENABLE_POSE", "true").lower() == "true"
+
 if DETECTOR_TYPE == "roboflow":
     detector = Detector(
         model_type="roboflow",
         roboflow_api_key=os.getenv("ROBOFLOW_API_KEY"),
         roboflow_model_id=os.getenv("ROBOFLOW_MODEL_ID"),
-        roboflow_version=int(os.getenv("ROBOFLOW_VERSION", "1"))
+        roboflow_version=int(os.getenv("ROBOFLOW_VERSION", "1")),
+        enable_pose=ENABLE_POSE  # NEW: Enable pose estimation
     )
     yolo_model = detector  # Use detector directly
 else:
     # Use YOLOv8 (default) - create Detector instance for unified API
-    detector = Detector(model_type="yolo", model_name=MODEL_NAME)
+    detector = Detector(model_type="yolo", model_name=MODEL_NAME, enable_pose=ENABLE_POSE)
     yolo_model = detector  # Use detector directly
+
+if ENABLE_POSE:
+    print("✅ Pose estimation enabled for drowning detection")
 
 print("Initializing person tracker...")
 tracker = PersonTracker()
@@ -94,6 +106,23 @@ behavior_analyzer = BehaviorAnalyzer()
 
 print("Initializing risk engine...")
 risk_engine = RiskEngine()
+
+print("Initializing pose analyzer for drowning detection...")
+pose_analyzer = PoseAnalyzer() if ENABLE_POSE else None
+
+print("Initializing advanced tracker for occlusion handling...")
+advanced_tracker = AdvancedTracker(max_occlusion_frames=30)  # Keep track for 3 seconds after disappearing
+
+print("Initializing temporal analyzer for fatigue & panic detection...")
+temporal_analyzer = TemporalAnalyzer()
+
+print("Initializing beach calibration system...")
+beach_calibration = BeachCalibration(beach_id=CAMERA_ID, calibration_samples_needed=100)
+# Try to load existing calibration
+calibration_file = f"beach_profile_{CAMERA_ID}.pkl"
+if not beach_calibration.load_profile(calibration_file):
+    print(f"📚 Starting NEW calibration for beach '{CAMERA_ID}'")
+    print(f"   Will analyze first ~100 swimmers to learn normal patterns")
 
 # Water analyzer will be initialized after we get first frame
 water_analyzer = None
@@ -183,7 +212,9 @@ try:
             frame_timestamp = time.time()
 
         # ⚡ PERFORMANCE: Frame skipping (2x-3x speedup)
+        # IMPORTANT: Increment frame_idx BEFORE skip check, or we'll skip forever!
         if FRAME_SKIP > 1 and frame_idx % FRAME_SKIP != 0:
+            frame_idx += 1  # ✅ Increment even for skipped frames
             continue  # Skip this frame, process next one
 
         orig_frame = frame.copy()
@@ -250,11 +281,84 @@ try:
         tracked_people = tracker.update(detections, timestamp=frame_timestamp)
         # tracked_people: List[TrackedPerson] (has .track_id, .bbox, ...)
         
-        # --- c.1 Analyze water conditions ---
+        # --- c.1 SMART STAGED ANALYSIS: Only run pose on high-risk swimmers ---
+        # First, do quick risk assessment on ALL swimmers (cheap)
+        quick_risk_scores = {}
+        high_risk_swimmers = []  # Swimmers that need deep pose analysis
+        
+        for person in tracked_people:
+            # Get basic risk factors (fast)
+            zone = water_analyzer.get_zone_for_bbox(person.bbox)
+            motion_metrics = behavior_analyzer.get_motion_metrics(person.track_id)
+            
+            # Quick risk score (without pose)
+            quick_risk = 0.0
+            if zone == WaterZone.DANGER:
+                quick_risk += 30
+            elif zone == WaterZone.CAUTION:
+                quick_risk += 15
+            
+            if motion_metrics and motion_metrics.pattern in [MovementPattern.STATIONARY, MovementPattern.ERRATIC]:
+                quick_risk += 25
+            
+            quick_risk_scores[person.track_id] = quick_risk
+            
+            # 🎯 SMART FILTER: Only analyze pose if risk > 30 OR in danger zone
+            if quick_risk > 30 or zone == WaterZone.DANGER:
+                high_risk_swimmers.append(person)
+        
+        # --- c.2 Deep pose analysis (ONLY for high-risk swimmers) ---
+        poses_dict = {}  # track_id -> (features, action, keypoints)
+        if ENABLE_POSE and pose_analyzer and len(high_risk_swimmers) > 0:
+            try:
+                print(f"🎯 Analyzing pose for {len(high_risk_swimmers)}/{len(tracked_people)} high-risk swimmers")
+                
+                # Detect all poses in the frame (unavoidable, YOLOv8-Pose processes whole frame)
+                all_poses = detector.detect_poses(frame, conf_thres=0.4)
+                
+                # Match poses ONLY to high-risk swimmers (optimization on matching)
+                for i, keypoints in all_poses.items():
+                    if len(keypoints) > 0:
+                        # Get pose centroid (average of visible keypoints)
+                        visible_kp = keypoints[keypoints[:, 2] > 0.3][:, :2]  # x, y only, conf > 0.3
+                        if len(visible_kp) > 0:
+                            pose_center = visible_kp.mean(axis=0)
+                            
+                            # Find closest HIGH-RISK person (not all people!)
+                            min_dist = float('inf')
+                            closest_person = None
+                            for person in high_risk_swimmers:
+                                x1, y1, x2, y2 = person.bbox
+                                bbox_center = np.array([(x1 + x2) / 2, (y1 + y2) / 2])
+                                dist = np.linalg.norm(pose_center - bbox_center)
+                                if dist < min_dist:
+                                    min_dist = dist
+                                    closest_person = person
+                            
+                            # If close enough, analyze pose
+                            if closest_person and min_dist < 150:  # Within 150 pixels
+                                features, action = pose_analyzer.analyze_pose(keypoints, closest_person.track_id)
+                                poses_dict[closest_person.track_id] = (features, action, keypoints)
+            except Exception as e:
+                if frame_idx % 30 == 0:  # Log occasionally
+                    print(f"⚠️  Pose analysis error: {e}")
+        
+        # --- c.2 Analyze water conditions ---
         water_conditions = water_analyzer.analyze_conditions(frame)
         
-        # --- c.2 Analyze swimmer behavior and calculate risk ---
+        # --- c.3 Update advanced tracking features (appearance, trajectory) ---
+        for person in tracked_people:
+            # Update appearance features for re-identification
+            advanced_tracker.update_appearance(person.track_id, orig_frame, person.bbox, frame_idx)
+            
+            # Update trajectory history
+            x1, y1, x2, y2 = person.bbox
+            center = ((x1 + x2) // 2, (y1 + y2) // 2)
+            advanced_tracker.update_trajectory(person.track_id, center, frame_timestamp)
+        
+        # --- c.4 Analyze swimmer behavior and calculate risk ---
         active_track_ids = []
+        active_alerts_temp = []  # Collect alerts during processing
         for person in tracked_people:
             active_track_ids.append(person.track_id)
             
@@ -275,25 +379,79 @@ try:
                 FRAME_SHAPE[0]
             )
             
-            # Calculate risk score
+            # 🌊 Detect if swimmer is drifting (rip current)
+            is_drifting, drift_speed = advanced_tracker.detect_drift(
+                person.track_id,
+                scene_geometry.shore_line_y if scene_geometry else FRAME_SHAPE[0]
+            )
+            
+            # 🆕 Extract pose-based action FIRST (needed for temporal analysis)
+            pose_risk = 0.0
+            swimming_action = None
+            if person.track_id in poses_dict:
+                features, action, _ = poses_dict[person.track_id]
+                pose_risk = pose_analyzer.get_drowning_risk_from_pose(action, features)
+                swimming_action = action
+                
+                # 🚨 CRITICAL: If pose indicates active/passive drowning, MAX OUT risk
+                if action in [SwimmingAction.ACTIVE_DROWNING, SwimmingAction.PASSIVE_DROWNING]:
+                    pose_risk = 95.0  # CRITICAL
+            
+            # ⏱️ Temporal analysis (fatigue, panic progression) - uses swimming_action
+            swimmer_state, state_transition = temporal_analyzer.update(
+                track_id=person.track_id,
+                position=((x1 + x2) // 2, (y1 + y2) // 2),
+                speed=motion_metrics.velocity if motion_metrics else 0.0,
+                zone=zone.value if zone else "safe",
+                pose_action=swimming_action.value if swimming_action else None,
+                timestamp=frame_timestamp
+            )
+            
+            # Get panic progression score (0-100)
+            panic_score = temporal_analyzer.get_panic_progression_score(person.track_id)
+            
+            # Get fatigue metrics
+            fatigue_metrics = temporal_analyzer.get_fatigue_metrics(person.track_id, frame_timestamp)
+            
+            # 🏖️ Feed observation to beach calibration
+            if not beach_calibration.profile.is_calibrated:
+                beach_calibration.add_observation(
+                    swimmer_id=person.track_id,
+                    position=((x1 + x2) // 2, (y1 + y2) // 2),
+                    speed=motion_metrics.velocity if motion_metrics else 0.0,
+                    zone=zone.value if zone else "safe",
+                    risk_level="low",  # Will get real risk_level after it's calculated
+                    timestamp=frame_timestamp,
+                    is_exiting=False  # Would detect this in full version
+                )
+            
+            # Calculate combined risk score (integrating pose risk + temporal panic)
+            # Use highest of: pose_risk, panic_score
+            final_risk_override = None
+            if pose_risk > 50 or panic_score > 50:
+                final_risk_override = max(pose_risk, panic_score)
+            
             risk_score = risk_engine.calculate_risk(
                 person.track_id,
                 zone,
                 motion_metrics,
                 distance_from_shore,
-                frame_timestamp
+                frame_timestamp,
+                pose_risk_override=final_risk_override
             )
             
             # Collect alerts
             if risk_score and risk_score.alert_triggered:
-                active_alerts.append(risk_score)
+                active_alerts_temp.append(risk_score)
         
-        # Get all active alerts
+        # Get all active alerts from risk engine
         active_alerts = risk_engine.get_active_alerts()
         
         # Cleanup inactive tracks
         behavior_analyzer.cleanup(active_track_ids)
         risk_engine.cleanup(active_track_ids)
+        advanced_tracker.cleanup(active_track_ids)
+        temporal_analyzer.cleanup(active_track_ids)
 
         # --- c.1 Send data to backend API (every N frames) ---
         if SEND_TO_BACKEND and frame_idx % BACKEND_SEND_INTERVAL == 0:
@@ -426,11 +584,77 @@ try:
             # Draw bounding box
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
             
-            # 📝 SIMPLE LABEL: Just ID + Risk Level
+            # 🦴 POSE SKELETON: Only drawn for high-risk swimmers being analyzed
+            if person.track_id in poses_dict:
+                features, action, keypoints = poses_dict[person.track_id]
+                
+                # Visual indicator: "[POSE]" badge shows this swimmer is getting deep analysis
+                cv2.putText(frame, "[POSE]", (x2 + 5, y1 + 20), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+                
+                # Define skeleton connections (COCO format)
+                skeleton = [
+                    (5, 6),   # shoulders
+                    (5, 7), (7, 9),   # left arm
+                    (6, 8), (8, 10),  # right arm
+                    (5, 11), (6, 12), (11, 12),  # torso
+                    (11, 13), (13, 15),  # left leg
+                    (12, 14), (14, 16),  # right leg
+                ]
+                
+                # Draw skeleton lines (thicker for drowning detection)
+                skeleton_thickness = 3 if 'DROWNING' in action.value else 2
+                for pt1_idx, pt2_idx in skeleton:
+                    if keypoints[pt1_idx, 2] > 0.3 and keypoints[pt2_idx, 2] > 0.3:  # confidence threshold
+                        pt1 = tuple(keypoints[pt1_idx, :2].astype(int))
+                        pt2 = tuple(keypoints[pt2_idx, :2].astype(int))
+                        cv2.line(frame, pt1, pt2, color, skeleton_thickness)
+                
+                # Draw keypoints (larger for key joints)
+                for i, kp in enumerate(keypoints):
+                    if kp[2] > 0.3:  # confidence threshold
+                        x, y = int(kp[0]), int(kp[1])
+                        # Larger circles for head (0), shoulders (5,6), hips (11,12)
+                        radius = 5 if i in [0, 5, 6, 11, 12] else 3
+                        cv2.circle(frame, (x, y), radius, color, -1)
+                
+                # Show action classification near the swimmer (BIG if drowning!)
+                action_text = action.value.replace('_', ' ').upper()
+                if 'DROWNING' in action_text:
+                    action_color = (0, 0, 255)  # RED for drowning
+                    action_scale = 0.8
+                elif 'STRUGGLING' in action_text:
+                    action_color = (0, 140, 255)  # ORANGE for struggling
+                    action_scale = 0.7
+                else:
+                    action_color = (255, 255, 255)  # WHITE for normal
+                    action_scale = 0.5
+                
+                cv2.putText(frame, action_text, (x1, y2 + 25), 
+                           cv2.FONT_HERSHEY_SIMPLEX, action_scale, action_color, 2)
+            
+            # 📝 LABEL: ID + State + Risk Level
             if risk_score:
-                label = f"#{person.track_id} {risk_score.level.value.upper()}"
+                label = f"#{person.track_id} {swimmer_state.value.upper()} {risk_score.level.value.upper()}"
             else:
-                label = f"#{person.track_id}"
+                label = f"#{person.track_id} {swimmer_state.value.upper()}"
+            
+            # ⏱️ Add FATIGUE indicator if detected
+            if fatigue_metrics and fatigue_metrics.speed_trend < -0.3:
+                label += " 💤TIRED"
+                # Draw fatigue indicator
+                cv2.putText(frame, f"Speed ↓{abs(fatigue_metrics.speed_trend)*100:.0f}%", 
+                           (x1, y1 - 35), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 165, 255), 1)
+            
+            # 🌊 Add DRIFT warning if detected
+            if is_drifting and drift_speed > 10:
+                label += " DRIFT!"
+                # Draw drift arrow
+                x1_center, y1_center = (x1 + x2) // 2, (y1 + y2) // 2
+                arrow_len = int(drift_speed * 2)  # Visual arrow length
+                cv2.arrowedLine(frame, (x1_center, y1_center), 
+                              (x1_center, y1_center - arrow_len),
+                              (0, 100, 255), 3, tipLength=0.3)
             
             # Label background for readability
             (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)
@@ -439,11 +663,27 @@ try:
             
             # 🎯 TRAJECTORY: Only show for MEDIUM/HIGH risk (reduce clutter)
             if is_medium_risk or is_high_risk:
+                # Past trajectory (solid line)
                 trajectory = behavior_analyzer.get_trajectory(person.track_id)
                 if len(trajectory) > 1:
                     points = [(p.x, p.y) for p in trajectory[-10:]]  # Last 10 points only
                     for i in range(1, len(points)):
                         cv2.line(frame, points[i-1], points[i], color, 3 if is_high_risk else 2)
+                
+                # 🔮 NEW: Predicted trajectory (dashed line)
+                predicted_traj = advanced_tracker.predict_trajectory(person.track_id, time_horizon=5.0)
+                if predicted_traj and predicted_traj.confidence > 0.5:
+                    # Draw predicted path as dashed line
+                    pred_points = predicted_traj.positions
+                    for i in range(1, len(pred_points)):
+                        if i % 2 == 0:  # Dashed effect
+                            cv2.line(frame, pred_points[i-1], pred_points[i], (255, 255, 0), 2)
+                    
+                    # Draw endpoint
+                    if len(pred_points) > 0:
+                        cv2.circle(frame, pred_points[-1], 6, (255, 255, 0), 2)
+                        cv2.putText(frame, f"5s", pred_points[-1], 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
         
         # --- e.2 Draw active alerts - BIG and CLEAR for lifeguards ---
         active_alerts = risk_engine.get_active_alerts()
@@ -478,6 +718,17 @@ try:
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         cv2.putText(frame_with_overlay, info_text, (10, 30),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 1)
+        
+        # 🏖️ Show calibration progress if not yet calibrated
+        if not beach_calibration.profile.is_calibrated:
+            current, needed, progress = beach_calibration.get_calibration_progress()
+            calib_text = f"📚 CALIBRATING: {current}/{needed} ({progress:.0f}%)"
+            cv2.putText(frame_with_overlay, calib_text, (10, 60),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+        else:
+            calib_text = f"✅ CALIBRATED ({beach_calibration.profile.calibration_samples} samples)"
+            cv2.putText(frame_with_overlay, calib_text, (10, 60),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
         
         # Add water conditions info
         if water_conditions.has_water:
@@ -549,6 +800,11 @@ finally:
     else:
         video_stream.release()
     cv2.destroyAllWindows()
+    
+    # 🏖️ Save beach calibration if complete
+    if beach_calibration.profile.is_calibrated:
+        beach_calibration.save_profile(calibration_file)
+    
     print("\n" + "="*60)
     print("📊 PIPELINE COMPLETED")
     print("="*60)

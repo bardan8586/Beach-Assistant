@@ -15,7 +15,8 @@ class Detector:
                  roboflow_api_key: Optional[str] = None,
                  roboflow_model_id: Optional[str] = None,
                  roboflow_version: Optional[int] = None,
-                 device: Optional[str] = None):
+                 device: Optional[str] = None,
+                 enable_pose: bool = False):  # NEW: Enable pose estimation
         """
         Initialize detector with either YOLOv8 or Roboflow.
         
@@ -26,15 +27,22 @@ class Detector:
             roboflow_model_id: Roboflow model ID (e.g., "swimmer-detection/1")
             roboflow_version: Roboflow model version number
             device: 'cuda', 'cpu', or None (auto-detect)
+            enable_pose: Whether to enable pose estimation (YOLOv8-Pose)
         """
         self.model_type = model_type.lower()
         self.model = None
+        self.pose_model = None  # NEW: Separate model for pose estimation
+        self.enable_pose = enable_pose
         self.roboflow_config = {}
         
         if self.model_type == "roboflow":
             self._init_roboflow(roboflow_api_key, roboflow_model_id, roboflow_version)
         else:
             self._init_yolo(model_name, device)
+            
+            # Initialize pose model if enabled
+            if self.enable_pose:
+                self._init_pose_model(device)
     
     def _init_yolo(self, model_name: str, device: Optional[str]):
         """Initialize YOLOv8 model."""
@@ -44,10 +52,21 @@ class Detector:
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         
+        self.device = device
         print(f"Loading YOLOv8 model: {model_name} on {device}")
         self.model = YOLO(model_name)
         self.model.to(device)
         print(f"✅ YOLOv8 model loaded successfully")
+    
+    def _init_pose_model(self, device: Optional[str]):
+        """Initialize YOLOv8-Pose model for body keypoint detection."""
+        from ultralytics import YOLO
+        
+        print(f"Loading YOLOv8-Pose model for drowning detection...")
+        # Use YOLOv8n-pose for real-time performance
+        self.pose_model = YOLO("yolov8n-pose.pt")
+        self.pose_model.to(device or self.device)
+        print(f"✅ YOLOv8-Pose model loaded successfully")
     
     def _init_roboflow(self, api_key: Optional[str], model_id: Optional[str], version: Optional[int]):
         """Initialize Roboflow Inference API connection."""
@@ -98,6 +117,45 @@ class Detector:
                          if (x2 - x1) >= min_size and (y2 - y1) >= min_size]
         
         return detections
+    
+    def detect_poses(self, frame, conf_thres: float = 0.5) -> dict:
+        """
+        Detect body keypoints for all people in frame using YOLOv8-Pose.
+        
+        Args:
+            frame: Input image (numpy array, BGR)
+            conf_thres: Minimum confidence threshold
+            
+        Returns:
+            Dictionary mapping detection index to keypoints array (17, 3) [x, y, conf]
+            Format: {0: keypoints_array, 1: keypoints_array, ...}
+        """
+        if not self.enable_pose or self.pose_model is None:
+            return {}
+        
+        try:
+            results = self.pose_model(
+                frame,
+                conf=conf_thres,
+                verbose=False,
+                device=self.device
+            )
+            
+            result = results[0]
+            poses = {}
+            
+            # Extract keypoints for each detection
+            if hasattr(result, 'keypoints') and result.keypoints is not None:
+                keypoints_data = result.keypoints.data.cpu().numpy()  # Shape: (num_people, 17, 3)
+                
+                for i, kp in enumerate(keypoints_data):
+                    poses[i] = kp  # (17, 3) array of [x, y, confidence]
+            
+            return poses
+        
+        except Exception as e:
+            print(f"⚠️  Pose detection error: {e}")
+            return {}
     
     def _detect_yolo(self, frame, conf_thres: float, iou_thres: float, 
                     imgsz: Optional[int] = None) -> List[Tuple[int, int, int, int, float]]:

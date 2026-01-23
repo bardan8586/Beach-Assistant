@@ -86,7 +86,8 @@ class RiskEngine:
         zone: WaterZone,
         motion_metrics: MotionMetrics,
         distance_from_shore: float,
-        timestamp: float
+        timestamp: float,
+        pose_risk_override: Optional[float] = None  # NEW: Pose-based drowning risk
     ) -> RiskScore:
         """
         Calculate risk score for a swimmer.
@@ -97,12 +98,47 @@ class RiskEngine:
             motion_metrics: Motion analysis metrics
             distance_from_shore: Distance from shore in pixels
             timestamp: Current timestamp
+            pose_risk_override: If provided, use this as primary risk score (drowning detection)
             
         Returns:
             RiskScore object
         """
         factors = {}
         total_score = 0.0
+        
+        # 🚨 PRIORITY: Pose-based drowning detection (overrides other factors)
+        if pose_risk_override is not None and pose_risk_override > 50:
+            # HIGH CONFIDENCE drowning behavior detected from pose
+            factors["pose_drowning_detection"] = pose_risk_override
+            total_score = pose_risk_override
+            
+            # Determine risk level
+            if total_score >= 90:
+                level = RiskLevel.HIGH  # CRITICAL drowning
+            elif total_score >= 70:
+                level = RiskLevel.HIGH
+            elif total_score >= 50:
+                level = RiskLevel.MEDIUM
+            else:
+                level = RiskLevel.LOW
+            
+            # Immediate alert for drowning behavior (no cooldown for critical)
+            alert_triggered = False
+            if total_score >= self.alert_threshold:
+                alert_triggered = True
+                self.alert_history[track_id] = timestamp
+            
+            risk_score = RiskScore(
+                track_id=track_id,
+                total_score=total_score,
+                level=level,
+                factors=factors,
+                timestamp=timestamp,
+                alert_triggered=alert_triggered
+            )
+            
+            self.risk_scores[track_id] = risk_score
+            return risk_score
         
         # Factor 1: Stationary behavior
         if motion_metrics.pattern == MovementPattern.STATIONARY:
