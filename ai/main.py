@@ -38,7 +38,8 @@ from scene_analyzer import SceneAnalyzer
 from pose_analyzer import PoseAnalyzer, SwimmingAction  # Pose-based drowning detection
 from advanced_tracker import AdvancedTracker  # Robust tracking for ocean conditions
 from temporal_analyzer import TemporalAnalyzer, SwimmerState  # Fatigue & panic progression
-from beach_calibration import BeachCalibration  # NEW: Learn beach-specific patterns
+from beach_calibration import BeachCalibration  # Learn beach-specific patterns
+from alert_engine import AlertEngine, AlertLevel  # NEW: Intelligent alert system with hysteresis
 
 # --------- Configurations ---------
 # For testing: use the test video
@@ -123,6 +124,10 @@ calibration_file = f"beach_profile_{CAMERA_ID}.pkl"
 if not beach_calibration.load_profile(calibration_file):
     print(f"📚 Starting NEW calibration for beach '{CAMERA_ID}'")
     print(f"   Will analyze first ~100 swimmers to learn normal patterns")
+
+print("Initializing intelligent alert system...")
+alert_engine = AlertEngine()
+print("✅ Alert engine ready with hysteresis and throttling")
 
 # Water analyzer will be initialized after we get first frame
 water_analyzer = None
@@ -440,18 +445,31 @@ try:
                 pose_risk_override=final_risk_override
             )
             
-            # Collect alerts
-            if risk_score and risk_score.alert_triggered:
-                active_alerts_temp.append(risk_score)
+            # 🚨 NEW: Use intelligent alert engine (with hysteresis & throttling)
+            alert = alert_engine.update(
+                swimmer_id=person.track_id,
+                risk_score=risk_score.total_score if risk_score else 0,
+                risk_level=risk_score.level.value if risk_score else "low",
+                swimmer_state=swimmer_state.value,
+                reason=risk_score.factors if risk_score and risk_score.factors else {},
+                location=((x1 + x2) // 2, (y1 + y2) // 2),
+                zone=zone.value if zone else "safe",
+                timestamp=frame_timestamp,
+                pose_action=swimming_action.value if swimming_action else None
+            )
+            
+            if alert:
+                active_alerts_temp.append(alert)
         
-        # Get all active alerts from risk engine
-        active_alerts = risk_engine.get_active_alerts()
+        # Get all active alerts from alert engine
+        active_alerts = alert_engine.get_active_alerts()
         
         # Cleanup inactive tracks
         behavior_analyzer.cleanup(active_track_ids)
         risk_engine.cleanup(active_track_ids)
         advanced_tracker.cleanup(active_track_ids)
         temporal_analyzer.cleanup(active_track_ids)
+        alert_engine.cleanup(active_track_ids)
 
         # --- c.1 Send data to backend API (every N frames) ---
         if SEND_TO_BACKEND and frame_idx % BACKEND_SEND_INTERVAL == 0:
@@ -685,20 +703,37 @@ try:
                         cv2.putText(frame, f"5s", pred_points[-1], 
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
         
-        # --- e.2 Draw active alerts - BIG and CLEAR for lifeguards ---
-        active_alerts = risk_engine.get_active_alerts()
+        # --- e.2 Draw active alerts - INTELLIGENT, NON-SPAMMY ---
+        active_alerts = alert_engine.get_active_alerts()
         if active_alerts:
-            # Sort by risk (highest first)
-            active_alerts = sorted(active_alerts, key=lambda a: a.total_score, reverse=True)
-            alert_y = 70
-            for i, alert in enumerate(active_alerts[:2]):  # Show TOP 2 only
-                alert_text = f"⚠️ SWIMMER #{alert.track_id} - {alert.level.value.upper()}"
-                # Big text with background
-                (text_w, text_h), _ = cv2.getTextSize(alert_text, cv2.FONT_HERSHEY_SIMPLEX, 1.2, 3)
-                cv2.rectangle(frame, (5, alert_y - text_h - 5), (text_w + 15, alert_y + 5), (0, 0, 200), -1)
+            alert_y = 90  # Start below calibration status
+            for i, alert in enumerate(active_alerts[:3]):  # Show TOP 3 only
+                # Color by severity
+                if alert.level == AlertLevel.EMERGENCY:
+                    bg_color = (0, 0, 200)     # Red
+                    icon = "🚨"
+                elif alert.level == AlertLevel.ALERT:
+                    bg_color = (0, 140, 255)   # Orange
+                    icon = "⚠️"
+                else:  # WATCH
+                    bg_color = (0, 200, 255)   # Yellow
+                    icon = "👁️"
+                
+                # Alert text with context
+                alert_text = f"{icon} #{alert.swimmer_id} {alert.level.value.upper()} ({alert.duration:.0f}s)"
+                context_text = alert.action_recommended
+                
+                # Draw main alert
+                (text_w, text_h), _ = cv2.getTextSize(alert_text, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 3)
+                cv2.rectangle(frame, (5, alert_y - text_h - 5), (text_w + 15, alert_y + 5), bg_color, -1)
                 cv2.putText(frame, alert_text, (10, alert_y), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
-                alert_y += text_h + 15
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 3)
+                
+                # Draw action recommendation below
+                alert_y += text_h + 5
+                cv2.putText(frame, context_text, (15, alert_y), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                alert_y += 25
 
         # --- f. Overlay heatmap on frame ---
         frame_with_overlay = heatmap_acc.render_overlay(frame, alpha=0.5)
@@ -711,9 +746,9 @@ try:
             fps_timer = time.time()
         
         # --- Add info overlay ---
-        active_alerts_count = len(risk_engine.get_active_alerts())
+        alert_summary = alert_engine.get_alert_summary()
         info_text = (f"Frame: {frame_idx} | Swimmers: {len(tracked_people)} | "
-                    f"FPS: {current_fps:.1f} | Alerts: {active_alerts_count}")
+                    f"FPS: {current_fps:.1f} | Alerts: {alert_summary['emergency']}🔴 {alert_summary['alert']}🟠 {alert_summary['watch']}🟡")
         cv2.putText(frame_with_overlay, info_text, (10, 30),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         cv2.putText(frame_with_overlay, info_text, (10, 30),
