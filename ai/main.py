@@ -510,6 +510,25 @@ try:
                     
                     swimmers_data.append(swimmer_data)
                 
+                # Build alerts list from alert engine
+                alerts_data = []
+                for alert in alert_engine.get_active_alerts():
+                    alerts_data.append({
+                        "alert_id": alert.alert_id,
+                        "swimmer_id": alert.swimmer_id,
+                        "level": alert.level.value,
+                        "reason": alert.reason.value,
+                        "risk_score": float(alert.risk_score),
+                        "timestamp": float(alert.timestamp),
+                        "location": list(alert.location),
+                        "zone": alert.zone,
+                        "duration": float(alert.duration),
+                        "confidence": float(alert.confidence),
+                        "context": alert.context,
+                        "action_recommended": alert.action_recommended,
+                        "acknowledged": alert.acknowledged
+                    })
+                
                 # Build FrameResult payload
                 payload = {
                     "video_id": "realtime",  # For live, "realtime"; for playback, use actual video_id
@@ -534,6 +553,7 @@ try:
                         "detections_filtered": len(detections),
                         "active_tracks": len(tracked_people)
                     },
+                    "alerts": alerts_data,  # NEW: Include intelligent alerts
                     "system_mode": SYSTEM_MODE
                 }
                 

@@ -87,6 +87,42 @@ class SceneData(BaseModel):
         }
 
 
+class AlertData(BaseModel):
+    """Alert from intelligent alert engine"""
+    alert_id: str = Field(..., description="Unique alert ID")
+    swimmer_id: int = Field(..., description="Swimmer track ID")
+    level: str = Field(..., description="Alert level: watch, alert, emergency")
+    reason: str = Field(..., description="Alert reason")
+    risk_score: float = Field(..., ge=0.0, le=100.0, description="Risk score (0-100)")
+    timestamp: float = Field(..., description="Alert timestamp")
+    location: List[int] = Field(..., description="[x, y] position")
+    zone: str = Field(..., description="Water zone")
+    duration: float = Field(..., description="How long issue persisted (seconds)")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Alert confidence (0-1)")
+    context: str = Field(..., description="Human-readable context")
+    action_recommended: str = Field(..., description="Action recommendation for lifeguard")
+    acknowledged: bool = Field(default=False, description="Has lifeguard acknowledged?")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "alert_id": "ALERT-42-1-1674210000",
+                "swimmer_id": 42,
+                "level": "emergency",
+                "reason": "drowning_behavior",
+                "risk_score": 95.0,
+                "timestamp": 1674210000.0,
+                "location": [640, 360],
+                "zone": "danger",
+                "duration": 12.5,
+                "confidence": 0.92,
+                "context": "Swimmer #42 showing drowning behavior for 12 seconds in DANGER zone",
+                "action_recommended": "🚨 IMMEDIATE WATER RESCUE - Drowning behavior detected",
+                "acknowledged": False
+            }
+        }
+
+
 class ProcessingMetrics(BaseModel):
     """Processing performance metrics for system health monitoring"""
     fps: float = Field(default=0.0, description="Current processing FPS")
@@ -140,6 +176,7 @@ class FrameResult(BaseModel):
     swimmers: List[SwimmerData] = Field(default_factory=list, description="Detected swimmers")
     scene: SceneData = Field(default_factory=SceneData, description="Scene analysis data")
     metrics: ProcessingMetrics = Field(default_factory=ProcessingMetrics, description="Processing metrics")
+    alerts: List[AlertData] = Field(default_factory=list, description="Active alerts from alert engine")
     
     # Metadata
     processed_at: datetime = Field(default_factory=datetime.utcnow, description="When this frame was processed")

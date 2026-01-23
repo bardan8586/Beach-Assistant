@@ -12,6 +12,8 @@ import DetailedStats from './components/Stats/DetailedStats'
 import VideoPlayer from './components/VideoFeed/VideoPlayer'
 import SwimmerList from './components/Swimmers/SwimmerList'
 import AlertPanel from './components/Alerts/AlertPanel'
+import PriorityDashboard from './components/Lifeguard/PriorityDashboard'
+import FocusMode from './components/Lifeguard/FocusMode'
 import VideoUploader from './components/VideoUpload/VideoUploader'
 import DataDebugPanel from './components/Debug/DataDebugPanel'
 import { useAppStore } from './store/useAppStore'
@@ -19,6 +21,7 @@ import { useWebSocket } from './hooks/useWebSocket'
 import { apiService } from './services/api'
 import { videoService } from './services/videoService'
 import { playbackService } from './services/playbackService'
+import { audioAlertService } from './services/audioAlertService'
 import type { FrameResult } from './types/frameResult'
 
 function App() {
@@ -31,6 +34,13 @@ function App() {
   // FrameResult data for playback mode
   const [frameResults, setFrameResults] = useState<FrameResult[]>([])
   const [playbackMode, setPlaybackMode] = useState(false)  // true = playback, false = live
+  
+  // Alert management
+  const [alerts, setAlerts] = useState<any[]>([])
+  const [audioEnabled, setAudioEnabled] = useState(true)
+  
+  // Focus mode
+  const [focusedSwimmerId, setFocusedSwimmerId] = useState<number | null>(null)
   
   // Get data from store
   const { 
@@ -55,29 +65,63 @@ function App() {
       console.log('   Current camera:', selectedCamera)
       console.log('   Message camera:', message.camera_id)
       
-      if (message.type === 'swimmers') {
-        console.log('   Swimmers data:', message.data)
+      // Handle FrameResult messages (new format with alerts)
+      if (message.swimmers || message.alerts) {
+        console.log('   FrameResult received:', message)
         
-        // Only process if it's for the current camera or 'all'
-        if (message.camera_id === selectedCamera || message.camera_id === 'all') {
-          // Convert backend format to frontend format
-          const formattedSwimmers = message.data.map((s: any) => {
-            console.log('   Processing swimmer:', s)
-            return {
-              track_id: s.track_id,
-              camera_id: message.camera_id,
-              bbox: s.bbox || { x1: 0, y1: 0, x2: 0, y2: 0 },
-              confidence: s.confidence || 0.8,
-              first_seen: s.first_seen || new Date().toISOString(),
-              last_seen: s.last_seen || new Date().toISOString(),
-              status: 'active' as const
+        // Update alerts if present
+        if (message.alerts && Array.isArray(message.alerts)) {
+          setAlerts(message.alerts)
+          
+          // Trigger audio alerts for new urgent alerts
+          message.alerts.forEach((alert: any) => {
+            if (!alert.acknowledged && (alert.level === 'emergency' || alert.level === 'alert')) {
+              audioAlertService.speakAlert(
+                alert.swimmer_id,
+                alert.level,
+                alert.zone,
+                alert.action_recommended,
+                alert.alert_id
+              )
             }
           })
-          console.log(`✅ Updated ${formattedSwimmers.length} swimmers for camera ${message.camera_id}`)
-          console.log('   Formatted swimmers:', formattedSwimmers)
+        }
+        
+        // Update swimmers if present
+        if (message.swimmers && Array.isArray(message.swimmers)) {
+          const formattedSwimmers = message.swimmers.map((s: any) => ({
+            track_id: s.track_id,
+            camera_id: message.camera_id || selectedCamera,
+            bbox: s.bbox || { x: 0, y: 0, w: 0, h: 0 },
+            confidence: s.confidence || 0.8,
+            risk_score: s.risk_score || 0,
+            risk_level: s.risk_level || 'LOW',
+            behavior: s.behavior || 'NORMAL',
+            zone: s.zone || 'SAFE',
+            time_in_water: s.time_in_water || 0,
+            velocity: s.velocity || 0,
+            first_seen: new Date().toISOString(),
+            last_seen: new Date().toISOString(),
+            status: 'active' as const
+          }))
           updateSwimmers(formattedSwimmers)
-        } else {
-          console.log(`⚠️ Ignoring message for different camera: ${message.camera_id} (current: ${selectedCamera})`)
+        }
+      }
+      // Legacy format support
+      else if (message.type === 'swimmers') {
+        console.log('   Swimmers data (legacy):', message.data)
+        
+        if (message.camera_id === selectedCamera || message.camera_id === 'all') {
+          const formattedSwimmers = message.data.map((s: any) => ({
+            track_id: s.track_id,
+            camera_id: message.camera_id,
+            bbox: s.bbox || { x1: 0, y1: 0, x2: 0, y2: 0 },
+            confidence: s.confidence || 0.8,
+            first_seen: s.first_seen || new Date().toISOString(),
+            last_seen: s.last_seen || new Date().toISOString(),
+            status: 'active' as const
+          }))
+          updateSwimmers(formattedSwimmers)
         }
       } else {
         console.log('   Unknown message type:', message.type)
@@ -200,6 +244,37 @@ function App() {
       }
     }
   }, [videoUrl])
+  
+  // Alert handlers
+  const handleAcknowledgeAlert = async (alertId: string) => {
+    // Update local state immediately
+    setAlerts(prev => prev.map(a => 
+      a.alert_id === alertId ? { ...a, acknowledged: true } : a
+    ))
+    
+    // TODO: Send acknowledgment to backend
+    console.log(`✓ Alert ${alertId} acknowledged`)
+  }
+  
+  const handleFocusSwimmer = (swimmerId: number) => {
+    setFocusedSwimmerId(swimmerId)
+  }
+  
+  const handleExitFocus = () => {
+    setFocusedSwimmerId(null)
+  }
+  
+  // Toggle audio
+  const toggleAudio = () => {
+    const newState = !audioEnabled
+    setAudioEnabled(newState)
+    audioAlertService.setEnabled(newState)
+  }
+  
+  // Get focused swimmer data
+  const focusedSwimmer = focusedSwimmerId 
+    ? swimmers.find(s => s.track_id === focusedSwimmerId) 
+    : null
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -387,18 +462,29 @@ function App() {
             <SwimmerList swimmers={swimmers} />
           </div>
 
-          {/* Right Column: Alerts & Info (1/3 width) */}
+          {/* Right Column: Priority Dashboard (1/3 width) */}
           <div className="lg:col-span-1 space-y-6">
-            <AlertPanel 
-              alerts={[]} 
-              onAcknowledge={async (alertId) => {
-                try {
-                  await apiService.acknowledgeAlert(alertId)
-                  // Refresh alerts or update state
-                } catch (error) {
-                  console.error('Failed to acknowledge alert:', error)
-                }
-              }}
+            {/* Audio Control */}
+            <div className="flex items-center justify-between bg-white rounded-lg shadow p-3">
+              <span className="text-sm font-medium text-gray-700">Audio Alerts</span>
+              <button
+                onClick={toggleAudio}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  audioEnabled 
+                    ? 'bg-green-600 text-white hover:bg-green-700' 
+                    : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
+                }`}
+              >
+                {audioEnabled ? '🔊 ON' : '🔇 OFF'}
+              </button>
+            </div>
+            
+            {/* Priority Dashboard */}
+            <PriorityDashboard 
+              alerts={alerts} 
+              onAcknowledge={handleAcknowledgeAlert}
+              onFocus={handleFocusSwimmer}
+              audioEnabled={audioEnabled}
             />
             
             {/* System Info */}
@@ -446,6 +532,14 @@ function App() {
 
       {/* Debug Panel */}
       <DataDebugPanel swimmers={swimmers} isConnected={wsConnected} selectedCamera={selectedCamera} />
+      
+      {/* Focus Mode Overlay */}
+      {focusedSwimmer && (
+        <FocusMode 
+          swimmer={focusedSwimmer} 
+          onExit={handleExitFocus}
+        />
+      )}
     </div>
   )
 }
