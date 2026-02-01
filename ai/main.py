@@ -42,13 +42,24 @@ from beach_calibration import BeachCalibration  # Learn beach-specific patterns
 from alert_engine import AlertEngine, AlertLevel  # NEW: Intelligent alert system with hysteresis
 
 # --------- Configurations ---------
-# For testing: use the test video
-import os
+# For testing: use the test video (CLI path, or first video in tests/data)
 if len(sys.argv) > 1:
     RTSP_URL = sys.argv[1]
 else:
-    # Default to beach swimming video
-    RTSP_URL = os.path.join(Path(__file__).parent.parent, "tests/data/Video_Generation_of_Beach_Swimming.mp4")
+    data_dir = Path(__file__).parent.parent / "tests" / "data"
+    default_video = data_dir / "Video_Generation_of_Beach_Swimming.mp4"
+    if default_video.exists():
+        RTSP_URL = str(default_video)
+    else:
+        # Use first video found in tests/data
+        for ext in ("*.mp4", "*.avi", "*.mov", "*.mkv"):
+            videos = list(data_dir.glob(ext))
+            if videos:
+                RTSP_URL = str(videos[0])
+                print(f"Using video from data folder: {videos[0].name}")
+                break
+        else:
+            RTSP_URL = str(default_video)  # Will fail with clear path in error
 
 OUTPUT_FPS = 10
 HEATMAP_SIZE = (360, 640)    # Heatmap resolution (height, width), can match video or be smaller
@@ -214,7 +225,12 @@ try:
             if not ret:
                 print("\n🏁 End of video reached")
                 break
-            frame_timestamp = time.time()
+            # Use VIDEO time (ms → s) so web app overlay sync works; wall clock breaks sync
+            frame_timestamp = video_stream.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+            if frame_timestamp <= 0 and frame_idx > 0:
+                # Fallback if CAP_PROP_POS_MSEC not reliable
+                fps = video_stream.get(cv2.CAP_PROP_FPS) or 30
+                frame_timestamp = frame_idx / fps
 
         # ⚡ PERFORMANCE: Frame skipping (2x-3x speedup)
         # IMPORTANT: Increment frame_idx BEFORE skip check, or we'll skip forever!
@@ -530,8 +546,10 @@ try:
                     })
                 
                 # Build FrameResult payload
+                # Use VIDEO_ID from backend when processing uploaded video (so playback finds results)
+                video_id_for_ingest = os.getenv("VIDEO_ID", "realtime")
                 payload = {
-                    "video_id": "realtime",  # For live, "realtime"; for playback, use actual video_id
+                    "video_id": video_id_for_ingest,
                     "camera_id": CAMERA_ID,
                     "frame_index": frame_idx,
                     "timestamp_ms": int(frame_timestamp * 1000),  # Convert seconds to milliseconds

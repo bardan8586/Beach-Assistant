@@ -13,25 +13,10 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-
-interface Alert {
-  alert_id: string
-  swimmer_id: number
-  level: 'watch' | 'alert' | 'emergency'
-  reason: string
-  risk_score: number
-  timestamp: number
-  location: [number, number]
-  zone: string
-  duration: number
-  confidence: number
-  context: string
-  action_recommended: string
-  acknowledged: boolean
-}
+import type { AlertData } from '../../types/frameResult'
 
 interface PriorityDashboardProps {
-  alerts: Alert[]
+  alerts: AlertData[]
   onAcknowledge: (alertId: string) => void
   onFocus: (swimmerId: number) => void
   audioEnabled?: boolean
@@ -70,7 +55,7 @@ export default function PriorityDashboard({
     })
   }, [alerts, audioEnabled, spokenAlerts])
   
-  const speakAlert = (alert: Alert) => {
+  const speakAlert = (alert: AlertData) => {
     // Play attention sound first
     playAlertSound(alert.level)
     
@@ -204,7 +189,7 @@ export default function PriorityDashboard({
       
       {/* TOP 3 Alerts - BIG CARDS */}
       <div className="grid grid-cols-1 gap-4">
-        {topAlerts.map((alert, index) => {
+        {topAlerts.map((alert) => {
           const colors = getLevelColor(alert.level)
           const isEmergency = alert.level === 'emergency'
           

@@ -27,8 +27,10 @@ export const playbackService = {
     }
     
     const data = await response.json()
-    console.log(`✅ Loaded ${data.length} frame results for video ${videoId}`)
-    return data
+    // Backend returns { success, video_id, frame_count, results }; we need the array
+    const results = Array.isArray(data) ? data : (data.results ?? [])
+    console.log(`✅ Loaded ${results.length} frame results for video ${videoId}`)
+    return results
   },
 
   /**

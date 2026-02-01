@@ -112,7 +112,8 @@ async def process_video(video_id: str, camera_id: Optional[str] = None):
         if not video_files:
             raise HTTPException(status_code=404, detail="Video file not found in directory")
         
-        video_path = video_files[0]
+        # Resolve to absolute path so AI subprocess (cwd=ai/) can find the file
+        video_path = video_files[0].resolve()
         
         # Use provided camera_id or generate one
         if not camera_id:
@@ -143,6 +144,7 @@ async def process_video(video_id: str, camera_id: Optional[str] = None):
         env = os.environ.copy()
         env["BACKEND_URL"] = os.getenv("BACKEND_URL", "http://localhost:8000")
         env["CAMERA_ID"] = camera_id
+        env["VIDEO_ID"] = video_id  # So ingest stores under this video_id for playback
         env["SEND_TO_BACKEND"] = "true"
         env["SHOW_WINDOW"] = "false"  # Disable OpenCV window for web mode
         

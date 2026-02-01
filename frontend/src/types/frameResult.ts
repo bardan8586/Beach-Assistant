@@ -69,6 +69,25 @@ export interface SceneData {
 }
 
 /**
+ * Alert from intelligent alert engine (matches backend AlertData)
+ */
+export interface AlertData {
+  alert_id: string;
+  swimmer_id: number;
+  level: 'watch' | 'alert' | 'emergency';
+  reason: string;
+  risk_score: number;
+  timestamp: number;
+  location: [number, number];
+  zone: string;
+  duration: number;
+  confidence: number;
+  context: string;
+  action_recommended: string;
+  acknowledged: boolean;
+}
+
+/**
  * Processing performance metrics for system health monitoring
  */
 export interface ProcessingMetrics {
@@ -121,11 +140,13 @@ export interface FrameResult {
   // Data
   /** Detected swimmers */
   swimmers: SwimmerData[];
-  /** Scene analysis data */
+  /** Scene analysis data (shore, horizon, water conditions) */
   scene?: SceneData;
   /** Processing metrics */
   metrics?: ProcessingMetrics;
-  
+  /** Active alerts from alert engine */
+  alerts?: AlertData[];
+
   // Metadata
   /** When this frame was processed (ISO 8601) */
   processed_at?: string;

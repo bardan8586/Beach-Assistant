@@ -66,15 +66,16 @@ export default function VideoProcessor({ videoFile }: VideoProcessorProps) {
     )
   }
 
-  const { swimmers, showBoundingBoxes, showHeatmap } = useAppStore()
+  const { showBoundingBoxes, showHeatmap, showZones } = useAppStore()
 
   return (
     <div className="space-y-4">
-      {/* Video Preview with Overlays */}
+      {/* Video Preview with Overlays (no frame results until processing completes) */}
       <VideoPlayer
-        swimmers={swimmers}
+        frameResults={[]}
         showBoundingBoxes={showBoundingBoxes}
         showHeatmap={showHeatmap}
+        showZones={showZones}
         cameraId="uploaded_video"
         videoUrl={videoUrl}
       />

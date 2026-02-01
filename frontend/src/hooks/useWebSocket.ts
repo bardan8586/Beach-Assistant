@@ -6,14 +6,18 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { WS_URL, WS_RECONNECT_INTERVAL } from '../utils/constants'
-import type { FrameResult } from '../types/frameResult'
+import type { FrameResult, SwimmerData, AlertData } from '../types/frameResult'
 
-interface WebSocketMessage {
-  type: 'swimmers' | 'alert' | 'heatmap' | 'frame_result'
-  data: any
-  frame_result?: FrameResult  // New standardized format
-  timestamp: number | string  // Can be number (Unix) or ISO string
-  camera_id: string
+/** Backend may send full FrameResult (swimmers, alerts) or legacy { type, data, camera_id } */
+export interface WebSocketMessage {
+  type?: 'swimmers' | 'alert' | 'heatmap' | 'frame_result'
+  data?: unknown
+  frame_result?: FrameResult
+  timestamp?: number | string
+  camera_id?: string
+  /** Present when backend sends FrameResult as message body */
+  swimmers?: SwimmerData[]
+  alerts?: AlertData[]
 }
 
 interface UseWebSocketOptions {

@@ -41,9 +41,7 @@ class AudioAlertService {
    */
   public playAlertSound(level: 'watch' | 'alert' | 'emergency') {
     if (!this.enabled || !this.audioContext) return
-    
-    const ctx = this.audioContext
-    
+
     if (level === 'emergency') {
       // Triple urgent beep
       this.playBeep(880, 0.3, 0)
@@ -146,9 +144,8 @@ class AudioAlertService {
         body,
         icon: `/favicon.ico`,
         badge: icon,
-        tag: `beach-alert-${level}`, // Replaces previous notification of same type
-        requireInteraction: level === 'emergency', // Emergency stays until clicked
-        vibrate: level === 'emergency' ? [200, 100, 200, 100, 200] : [200, 100, 200]
+        tag: `beach-alert-${level}`,
+        requireInteraction: level === 'emergency',
       })
     }
   }

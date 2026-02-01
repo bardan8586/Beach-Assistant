@@ -12,20 +12,7 @@
  */
 
 import { useEffect, useState } from 'react'
-
-interface Swimmer {
-  track_id: number
-  bbox: { x: number; y: number; w: number; h: number }
-  confidence: number
-  risk_score: number
-  risk_level: string
-  behavior: string
-  zone: string
-  time_in_water: number
-  velocity: number
-  state?: string
-  fatigue?: number
-}
+import type { Swimmer } from '../../types/swimmer'
 
 interface FocusModeProps {
   swimmer: Swimmer | null
@@ -36,21 +23,23 @@ interface FocusModeProps {
 export default function FocusMode({ swimmer, onExit, videoRef }: FocusModeProps) {
   const [riskHistory, setRiskHistory] = useState<number[]>([])
   
+  const riskScore = swimmer?.risk_score ?? 0
+
   // Track risk score over time
   useEffect(() => {
     if (swimmer) {
-      setRiskHistory(prev => [...prev.slice(-60), swimmer.risk_score]) // Keep last 60 data points
+      setRiskHistory(prev => [...prev.slice(-60), riskScore])
     }
-  }, [swimmer?.risk_score])
-  
+  }, [swimmer, riskScore])
+
   if (!swimmer) {
     return null
   }
-  
-  const riskColor = 
-    swimmer.risk_score >= 90 ? 'text-red-600' :
-    swimmer.risk_score >= 70 ? 'text-orange-600' :
-    swimmer.risk_score >= 50 ? 'text-yellow-600' :
+
+  const riskColor =
+    riskScore >= 90 ? 'text-red-600' :
+    riskScore >= 70 ? 'text-orange-600' :
+    riskScore >= 50 ? 'text-yellow-600' :
     'text-green-600'
   
   return (
@@ -83,7 +72,7 @@ export default function FocusMode({ swimmer, onExit, videoRef }: FocusModeProps)
           <div className="bg-gray-800 rounded-2xl p-8 text-center">
             <p className="text-gray-400 text-lg mb-2">CURRENT RISK</p>
             <div className={`text-9xl font-black ${riskColor}`}>
-              {swimmer.risk_score.toFixed(0)}
+              {riskScore.toFixed(0)}
             </div>
             <p className={`text-3xl font-bold mt-4 uppercase ${riskColor}`}>
               {swimmer.risk_level}
@@ -96,34 +85,34 @@ export default function FocusMode({ swimmer, onExit, videoRef }: FocusModeProps)
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">State:</span>
-                <span className="text-white font-bold text-lg">{swimmer.state || 'NORMAL'}</span>
+                <span className="text-white font-bold text-lg">{(swimmer as { state?: string }).state ?? 'NORMAL'}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Behavior:</span>
-                <span className="text-white font-bold">{swimmer.behavior}</span>
+                <span className="text-white font-bold">{swimmer.behavior ?? '—'}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Zone:</span>
                 <span className={`font-bold ${
-                  swimmer.zone === 'DANGER' ? 'text-red-400' :
-                  swimmer.zone === 'CAUTION' ? 'text-yellow-400' :
+                  (swimmer.zone === 'DANGER') ? 'text-red-400' :
+                  (swimmer.zone === 'CAUTION') ? 'text-yellow-400' :
                   'text-green-400'
                 }`}>
-                  {swimmer.zone}
+                  {swimmer.zone ?? '—'}
                 </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Time in Water:</span>
-                <span className="text-white font-bold">{swimmer.time_in_water.toFixed(0)}s</span>
+                <span className="text-white font-bold">{(swimmer.time_in_water ?? 0).toFixed(0)}s</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Velocity:</span>
-                <span className="text-white font-bold">{swimmer.velocity.toFixed(1)} px/s</span>
+                <span className="text-white font-bold">{(swimmer.velocity ?? 0).toFixed(1)} px/s</span>
               </div>
-              {swimmer.fatigue !== undefined && (
+              {(swimmer as { fatigue?: number }).fatigue != null && (
                 <div className="flex justify-between items-center">
                   <span className="text-gray-400">Fatigue:</span>
-                  <span className="text-orange-400 font-bold">{swimmer.fatigue.toFixed(0)}%</span>
+                  <span className="text-orange-400 font-bold">{(swimmer as unknown as { fatigue: number }).fatigue.toFixed(0)}%</span>
                 </div>
               )}
             </div>
@@ -168,7 +157,7 @@ export default function FocusMode({ swimmer, onExit, videoRef }: FocusModeProps)
                   <div className="text-center">
                     <div className="text-6xl mb-4">📹</div>
                     <p>Swimmer #{swimmer.track_id}</p>
-                    <p className="text-sm mt-2">Position: ({swimmer.bbox.x}, {swimmer.bbox.y})</p>
+                    <p className="text-sm mt-2">Position: ({swimmer.bbox?.x ?? 0}, {swimmer.bbox?.y ?? 0})</p>
                   </div>
                 </div>
               </div>

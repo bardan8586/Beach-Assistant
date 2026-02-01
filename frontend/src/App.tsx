@@ -8,10 +8,10 @@ import { useEffect, useState } from 'react'
 import './index.css'
 
 // Components
+import Header from './components/Layout/Header'
 import DetailedStats from './components/Stats/DetailedStats'
 import VideoPlayer from './components/VideoFeed/VideoPlayer'
 import SwimmerList from './components/Swimmers/SwimmerList'
-import AlertPanel from './components/Alerts/AlertPanel'
 import PriorityDashboard from './components/Lifeguard/PriorityDashboard'
 import FocusMode from './components/Lifeguard/FocusMode'
 import VideoUploader from './components/VideoUpload/VideoUploader'
@@ -22,7 +22,7 @@ import { apiService } from './services/api'
 import { videoService } from './services/videoService'
 import { playbackService } from './services/playbackService'
 import { audioAlertService } from './services/audioAlertService'
-import type { FrameResult } from './types/frameResult'
+import type { FrameResult, AlertData } from './types/frameResult'
 
 function App() {
   const [uploadedVideo, setUploadedVideo] = useState<File | null>(null)
@@ -36,11 +36,14 @@ function App() {
   const [playbackMode, setPlaybackMode] = useState(false)  // true = playback, false = live
   
   // Alert management
-  const [alerts, setAlerts] = useState<any[]>([])
+  const [alerts, setAlerts] = useState<AlertData[]>([])
   const [audioEnabled, setAudioEnabled] = useState(true)
   
   // Focus mode
   const [focusedSwimmerId, setFocusedSwimmerId] = useState<number | null>(null)
+
+  // User-visible errors (e.g. playback load failed)
+  const [playbackError, setPlaybackError] = useState<string | null>(null)
   
   // Get data from store
   const { 
@@ -74,7 +77,7 @@ function App() {
           setAlerts(message.alerts)
           
           // Trigger audio alerts for new urgent alerts
-          message.alerts.forEach((alert: any) => {
+          message.alerts.forEach((alert: { alert_id: string; level: string; swimmer_id: number; zone: string; action_recommended: string; acknowledged?: boolean }) => {
             if (!alert.acknowledged && (alert.level === 'emergency' || alert.level === 'alert')) {
               audioAlertService.speakAlert(
                 alert.swimmer_id,
@@ -89,7 +92,7 @@ function App() {
         
         // Update swimmers if present
         if (message.swimmers && Array.isArray(message.swimmers)) {
-          const formattedSwimmers = message.swimmers.map((s: any) => ({
+          const formattedSwimmers = message.swimmers.map((s: { track_id: number; bbox?: { x: number; y: number; w: number; h: number }; confidence?: number; risk_score?: number; risk_level?: string; behavior?: string; zone?: string; time_in_water?: number; velocity?: number }) => ({
             track_id: s.track_id,
             camera_id: message.camera_id || selectedCamera,
             bbox: s.bbox || { x: 0, y: 0, w: 0, h: 0 },
@@ -108,13 +111,12 @@ function App() {
         }
       }
       // Legacy format support
-      else if (message.type === 'swimmers') {
-        console.log('   Swimmers data (legacy):', message.data)
-        
+      else if (message.type === 'swimmers' && message.data && Array.isArray(message.data)) {
+        const data = message.data as Array<{ track_id: number; bbox?: unknown; first_seen?: string; last_seen?: string; confidence?: number }>
         if (message.camera_id === selectedCamera || message.camera_id === 'all') {
-          const formattedSwimmers = message.data.map((s: any) => ({
+          const formattedSwimmers = data.map((s) => ({
             track_id: s.track_id,
-            camera_id: message.camera_id,
+            camera_id: message.camera_id ?? selectedCamera,
             bbox: s.bbox || { x1: 0, y1: 0, x2: 0, y2: 0 },
             confidence: s.confidence || 0.8,
             first_seen: s.first_seen || new Date().toISOString(),
@@ -197,13 +199,14 @@ function App() {
               clearInterval(statusInterval)
               setProcessingStatus('completed')
               setProcessing(false)
-              
-              // Auto-load playback data when processing completes
-              console.log('🎬 Loading playback data...')
-              const results = await playbackService.loadFrameResults(uploadResult.video_id)
-              setFrameResults(results)
-              setPlaybackMode(true)
-              console.log(`✅ Playback mode activated with ${results.length} frames`)
+              setPlaybackError(null)
+              try {
+                const results = await playbackService.loadFrameResults(uploadResult.video_id)
+                setFrameResults(results)
+                setPlaybackMode(true)
+              } catch {
+                setPlaybackError('Processing finished but results could not be loaded. Use "Load results" to retry.')
+              }
             }
           } catch (error) {
             console.error('Status check error:', error)
@@ -224,15 +227,13 @@ function App() {
   // Manual playback mode toggle
   const loadPlaybackData = async () => {
     if (!videoId) return
+    setPlaybackError(null)
     try {
-      console.log('🎬 Manually loading playback data...')
       const results = await playbackService.loadFrameResults(videoId)
       setFrameResults(results)
       setPlaybackMode(true)
-      console.log(`✅ Loaded ${results.length} frames for playback`)
-    } catch (error) {
-      console.error('Failed to load playback data:', error)
-      alert('No playback data available yet. Wait for processing to complete.')
+    } catch {
+      setPlaybackError('Analysis results not available yet. Run processing first, then try "Load results".')
     }
   }
 
@@ -277,60 +278,12 @@ function App() {
     : null
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Professional Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="text-4xl">🏖️</div>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  Beach Safety Monitor
-                </h1>
-                <p className="text-sm text-gray-600">
-                  Upload video → AI Processing → Real-time Tracking
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-6">
-              <div className="text-right">
-                <div className="text-xs text-gray-500 uppercase tracking-wide">Connection</div>
-                <div className="flex items-center space-x-2 mt-1">
-                  <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-                  <span className={`text-sm font-medium ${wsConnected ? 'text-green-600' : 'text-red-600'}`}>
-                    {wsConnected ? 'Connected' : 'Disconnected'}
-                  </span>
-                </div>
-                {!wsConnected && (
-                  <div className="text-xs text-red-500 mt-1">
-                    Check console for errors
-                  </div>
-                )}
-              </div>
-              <div className="text-right">
-                <div className="text-xs text-gray-500 uppercase tracking-wide">Camera</div>
-                <div className="text-sm font-semibold text-gray-900 mt-1">{selectedCamera}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-xs text-gray-500 uppercase tracking-wide">Status</div>
-                <div className={`text-sm font-semibold mt-1 ${
-                  processingStatus === 'processing' ? 'text-blue-600' :
-                  processingStatus === 'completed' ? 'text-green-600' :
-                  processingStatus === 'error' ? 'text-red-600' :
-                  'text-gray-600'
-                }`}>
-                  {processingStatus === 'uploading' ? '📤 Uploading...' :
-                   processingStatus === 'processing' ? '🤖 Processing...' :
-                   processingStatus === 'completed' ? '✅ Complete' :
-                   processingStatus === 'error' ? '❌ Error' :
-                   'Ready'}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-100">
+      <Header
+        selectedCamera={selectedCamera}
+        isConnected={wsConnected}
+        processingStatus={processingStatus}
+      />
 
       {/* Main Dashboard */}
       <main className="container mx-auto px-6 py-6">
@@ -395,6 +348,22 @@ function App() {
                 <VideoUploader onVideoSelected={handleVideoSelected} />
               ) : (
                 <div className="space-y-4">
+                  {playbackError && (
+                    <div
+                      role="alert"
+                      className="flex items-center justify-between gap-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800"
+                    >
+                      <span className="text-sm font-medium">{playbackError}</span>
+                      <button
+                        type="button"
+                        onClick={() => setPlaybackError(null)}
+                        className="shrink-0 rounded px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100"
+                        aria-label="Dismiss"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
                   <VideoPlayer
                     frameResults={frameResults}
                     showBoundingBoxes={showBoundingBoxes}
