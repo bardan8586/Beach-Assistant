@@ -227,7 +227,11 @@ export default function VideoPlayer({
   const activeAlerts = currentFrameResult?.alerts?.length ?? 0
 
   return (
-    <div ref={containerRef} className="relative bg-gray-900 rounded-lg overflow-hidden aspect-video">
+    <div
+      ref={containerRef}
+      className="relative overflow-hidden aspect-video rounded-lg bg-slate-900"
+      style={{ borderRadius: 'var(--radius-card)' }}
+    >
       {/* Video Element */}
       {videoUrl ? (
         <video
@@ -262,59 +266,44 @@ export default function VideoPlayer({
       />
 
       {/* Swimmer count overlay */}
-      <div className="absolute top-4 left-4 bg-black bg-opacity-80 rounded-lg px-4 py-2 z-20 space-y-1">
-        <p className="text-white text-sm font-bold">
-          🏊 Swimmers: {swimmerCount}
-        </p>
+      <div className="absolute top-3 left-3 z-20 space-y-1 rounded-lg bg-black/80 px-3 py-2 backdrop-blur-sm" style={{ borderRadius: 'var(--radius-button)' }}>
+        <p className="text-sm font-semibold text-white">🏊 Swimmers: {swimmerCount}</p>
         {activeAlerts > 0 && (
-          <p className="text-red-400 text-xs font-medium animate-pulse">
-            ⚠️ {activeAlerts} Active Alert{activeAlerts > 1 ? 's' : ''}
-          </p>
+          <p className="text-xs font-medium text-red-400 animate-pulse">⚠️ {activeAlerts} Active Alert{activeAlerts > 1 ? 's' : ''}</p>
         )}
         {currentFrameResult && (
-          <p className="text-gray-400 text-xs">
-            Frame {currentFrameResult.frame_index} | {(currentFrameResult.timestamp_ms / 1000).toFixed(1)}s
-          </p>
+          <p className="text-xs text-slate-400">Frame {currentFrameResult.frame_index} · {(currentFrameResult.timestamp_ms / 1000).toFixed(1)}s</p>
         )}
       </div>
 
       {/* Controls overlay */}
       {(onToggleBoxes || onToggleHeatmap || onToggleZones) && (
-        <div className="absolute bottom-4 right-4 flex space-x-2 z-20">
+        <div className="absolute bottom-3 right-3 z-20 flex gap-2">
           {onToggleBoxes && (
-            <button 
+            <button
               onClick={onToggleBoxes}
-              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                showBoundingBoxes 
-                  ? 'bg-green-600 text-white shadow-lg' 
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-              }`}
+              className={`px-2.5 py-1.5 rounded text-xs font-medium transition-colors ${showBoundingBoxes ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+              style={{ borderRadius: 'var(--radius-button)' }}
             >
-              {showBoundingBoxes ? '✓' : ''} Boxes
+              {showBoundingBoxes ? '✓ ' : ''}Boxes
             </button>
           )}
           {onToggleZones && (
-            <button 
+            <button
               onClick={onToggleZones}
-              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                showZones 
-                  ? 'bg-blue-600 text-white shadow-lg' 
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-              }`}
+              className={`px-2.5 py-1.5 rounded text-xs font-medium transition-colors ${showZones ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+              style={{ borderRadius: 'var(--radius-button)' }}
             >
-              {showZones ? '✓' : ''} Zones
+              {showZones ? '✓ ' : ''}Zones
             </button>
           )}
           {onToggleHeatmap && (
-            <button 
+            <button
               onClick={onToggleHeatmap}
-              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                showHeatmap 
-                  ? 'bg-purple-600 text-white shadow-lg' 
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-              }`}
+              className={`px-2.5 py-1.5 rounded text-xs font-medium transition-colors ${showHeatmap ? 'bg-violet-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+              style={{ borderRadius: 'var(--radius-button)' }}
             >
-              {showHeatmap ? '✓' : ''} Heatmap
+              {showHeatmap ? '✓ ' : ''}Heatmap
             </button>
           )}
         </div>
@@ -322,9 +311,9 @@ export default function VideoPlayer({
 
       {/* Water conditions (from scene) */}
       {currentFrameResult?.scene && (
-        <div className="absolute top-4 right-4 bg-black/80 rounded-lg px-3 py-2 z-20 border border-gray-600">
-          <p className="text-white text-xs font-medium mb-1">Water conditions</p>
-          <div className="text-xs space-y-0.5 text-gray-300">
+        <div className="absolute top-3 right-3 z-20 rounded-lg border border-slate-600 bg-black/80 px-3 py-2 backdrop-blur-sm" style={{ borderRadius: 'var(--radius-button)' }}>
+          <p className="mb-1 text-xs font-medium text-white">Water conditions</p>
+          <div className="text-xs space-y-0.5 text-slate-300">
             {currentFrameResult.scene.visibility != null && (
               <div className="flex justify-between gap-4">
                 <span>Visibility</span>

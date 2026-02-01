@@ -1,0 +1,11 @@
+# Beach Safety AI Pipeline
+# Install: python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
+
+# Detection (YOLOv8 + pose)
+ultralytics>=8.0.0
+torch>=2.0.0
+opencv-python-headless>=4.8.0
+
+# Pipeline
+numpy>=1.24.0
+requests>=2.28.0

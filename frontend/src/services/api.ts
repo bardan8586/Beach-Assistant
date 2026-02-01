@@ -34,11 +34,13 @@ apiClient.interceptors.response.use(
 class ApiService {
   /**
    * Get active swimmers for a camera
+   * Backend returns { success, data: Swimmer[], count }
    */
   async getSwimmers(cameraId?: string): Promise<Swimmer[]> {
     const params = cameraId ? { camera_id: cameraId } : {}
-    const response = await apiClient.get<Swimmer[]>('/swimmers', { params })
-    return response.data
+    const response = await apiClient.get<{ success: boolean; data: Swimmer[]; count?: number }>('/swimmers', { params })
+    const body = response.data
+    return Array.isArray(body) ? body : (body?.data ?? [])
   }
 
   /**

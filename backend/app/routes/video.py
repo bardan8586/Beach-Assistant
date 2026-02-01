@@ -11,6 +11,7 @@ import shutil
 from pathlib import Path
 import uuid
 import subprocess
+import threading
 import logging
 import cv2
 from typing import Optional
@@ -148,8 +149,16 @@ async def process_video(video_id: str, camera_id: Optional[str] = None):
         env["SEND_TO_BACKEND"] = "true"
         env["SHOW_WINDOW"] = "false"  # Disable OpenCV window for web mode
         
-        # Use python3 or python (try python3 first)
-        python_cmd = "python3" if shutil.which("python3") else "python"
+        # Use AI venv Python if it exists (has torch/ultralytics); else system python3
+        ai_venv_python = project_root / "ai" / "venv" / "bin" / "python"
+        if ai_venv_python.exists():
+            python_cmd = str(ai_venv_python)
+            logger.info(f"Using AI venv Python: {python_cmd}")
+        else:
+            python_cmd = "python3" if shutil.which("python3") else "python"
+            logger.warning(
+                "AI venv not found at ai/venv. Install AI deps: cd ai && python3 -m venv venv && pip install -r requirements.txt"
+            )
         
         # Start processing (non-blocking)
         # Change to ai directory so imports work correctly
@@ -160,7 +169,19 @@ async def process_video(video_id: str, camera_id: Optional[str] = None):
             stderr=subprocess.PIPE,
             cwd=str(project_root / "ai")  # Run from ai directory
         )
-        
+
+        def log_ai_stderr():
+            """Read AI subprocess stderr and log so we see crashes/errors in backend terminal."""
+            try:
+                for line in iter(process.stderr.readline, b""):
+                    if line:
+                        logger.info("[AI] %s", line.decode("utf-8", errors="replace").rstrip())
+            except Exception as e:
+                logger.debug("AI stderr reader stopped: %s", e)
+
+        t = threading.Thread(target=log_ai_stderr, daemon=True)
+        t.start()
+
         processing_jobs[video_id] = {
             "process": process,
             "camera_id": camera_id,

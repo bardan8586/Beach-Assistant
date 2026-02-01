@@ -19,6 +19,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _default_uploads_dir() -> Path:
+    """Absolute path to uploads dir so it works regardless of CWD (backend/uploads)."""
+    return Path(__file__).resolve().parent.parent.parent / "uploads"
+
+
 class ResultsStorage:
     """
     Manages FrameResult storage in JSONL format.
@@ -30,15 +35,17 @@ class ResultsStorage:
         metadata.json       (video metadata)
     """
     
-    def __init__(self, base_dir: str = "uploads"):
+    def __init__(self, base_dir: Optional[str] = None):
         """
         Initialize results storage.
         
         Args:
-            base_dir: Base directory for video uploads (default: "uploads")
+            base_dir: Base directory for video uploads. Defaults to backend/uploads (absolute).
         """
-        self.base_dir = Path(base_dir)
+        raw = base_dir or os.getenv("UPLOADS_DIR", "")
+        self.base_dir = Path(raw).resolve() if raw else _default_uploads_dir()
         self.base_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Results storage using: {self.base_dir}")
     
     def get_video_dir(self, video_id: str) -> Path:
         """Get directory for a specific video"""

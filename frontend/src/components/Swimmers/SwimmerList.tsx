@@ -4,11 +4,23 @@
  * Display detailed list of all tracked swimmers with all their data
  */
 
-import type { Swimmer } from '../../types/swimmer'
+import type { Swimmer, BoundingBox } from '../../types/swimmer'
 import { TRACK_COLORS } from '../../utils/constants'
 
 interface SwimmerListProps {
   swimmers: Swimmer[]
+}
+
+/** Normalize bbox to x1,y1,x2,y2 for display (API may send x,y,w,h). */
+function bboxForDisplay(bbox: BoundingBox): { x1: number; y1: number; x2: number; y2: number } {
+  if (bbox.x1 != null && bbox.y1 != null && bbox.x2 != null && bbox.y2 != null) {
+    return { x1: bbox.x1, y1: bbox.y1, x2: bbox.x2, y2: bbox.y2 }
+  }
+  const x = bbox.x ?? 0
+  const y = bbox.y ?? 0
+  const w = bbox.w ?? 0
+  const h = bbox.h ?? 0
+  return { x1: x, y1: y, x2: x + w, y2: y + h }
 }
 
 function formatTime(seconds: number): string {
@@ -27,104 +39,87 @@ function calculateTimeInView(firstSeen: string, lastSeen: string): string {
 export default function SwimmerList({ swimmers }: SwimmerListProps) {
   if (swimmers.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold mb-4">Tracked Swimmers</h3>
-        <div className="text-center py-8 text-gray-500">
+      <section className="card p-6" aria-label="Tracked swimmers">
+        <h3 className="card-title-lg mb-4">Tracked Swimmers</h3>
+        <div className="py-8 text-center text-slate-500">
           <div className="text-4xl mb-2">👁️</div>
           <p>No swimmers detected yet</p>
-          <p className="text-sm mt-1">Waiting for AI pipeline data...</p>
+          <p className="mt-1 text-sm">Waiting for AI pipeline data…</p>
         </div>
-      </div>
+      </section>
     )
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-lg">
-      <div className="p-4 border-b bg-gradient-to-r from-blue-50 to-primary-50">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-gray-900 flex items-center">
-            <span className="mr-2">📊</span>
-            Active Swimmers ({swimmers.length})
-          </h3>
-          <div className="text-sm text-gray-600">
-            Last updated: {new Date().toLocaleTimeString()}
-          </div>
-        </div>
+    <section className="card overflow-hidden" aria-label="Active swimmers">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/50 px-4 py-3">
+        <h3 className="card-title-lg flex items-center gap-2">
+          <span aria-hidden>📊</span>
+          Active Swimmers ({swimmers.length})
+        </h3>
+        <div className="text-sm text-slate-600">Updated {new Date().toLocaleTimeString()}</div>
       </div>
 
       <div className="overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-gray-50">
+          <thead className="bg-slate-50">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">
                 Track ID
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">
                 Position
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">
                 Confidence
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">
                 Time in View
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">
                 Status
               </th>
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
+          <tbody className="divide-y divide-slate-200 bg-white">
             {swimmers.map((swimmer) => {
               const color = TRACK_COLORS[swimmer.track_id % TRACK_COLORS.length]
               const timeInView = calculateTimeInView(swimmer.first_seen, swimmer.last_seen)
-              
+              const box = bboxForDisplay(swimmer.bbox)
+
               return (
-                <tr key={swimmer.track_id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div
-                        className="w-4 h-4 rounded-full mr-2"
-                        style={{ backgroundColor: color }}
-                      />
-                      <span className="font-mono font-bold text-gray-900">
-                        #{swimmer.track_id}
-                      </span>
+                <tr key={swimmer.track_id} className="transition-colors hover:bg-slate-50">
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="h-4 w-4 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                      <span className="font-mono font-semibold text-slate-900">#{swimmer.track_id}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      <div>X: {swimmer.bbox.x1}-{swimmer.bbox.x2}</div>
-                      <div className="text-xs text-gray-500">
-                        Y: {swimmer.bbox.y1}-{swimmer.bbox.y2}
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <div className="text-sm text-slate-900">
+                      <div>X: {box.x1.toFixed(0)}–{box.x2.toFixed(0)}</div>
+                      <div className="text-xs text-slate-500">Y: {box.y1.toFixed(0)}–{box.y2.toFixed(0)}</div>
+                    </div>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-24 rounded-full bg-slate-200">
+                        <div className="h-2 rounded-full bg-emerald-600" style={{ width: `${swimmer.confidence * 100}%` }} />
                       </div>
+                      <span className="text-sm font-medium text-slate-900">{(swimmer.confidence * 100).toFixed(1)}%</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="w-24 bg-gray-200 rounded-full h-2 mr-2">
-                        <div
-                          className="bg-green-600 h-2 rounded-full"
-                          style={{ width: `${swimmer.confidence * 100}%` }}
-                        />
-                      </div>
-                      <span className="text-sm font-medium text-gray-900">
-                        {(swimmer.confidence * 100).toFixed(1)}%
-                      </span>
-                    </div>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <span className="font-mono text-sm text-slate-900">{timeInView}</span>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <span className="text-sm text-gray-900 font-mono">
-                      {timeInView}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+                  <td className="whitespace-nowrap px-4 py-3">
                     <span
-                      className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                      className={`status-pill ${
                         swimmer.status === 'active'
-                          ? 'bg-green-100 text-green-800'
+                          ? 'bg-emerald-100 text-emerald-800'
                           : swimmer.status === 'alerted'
-                          ? 'bg-red-100 text-red-800'
-                          : 'bg-gray-100 text-gray-800'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-slate-100 text-slate-800'
                       }`}
                     >
                       {swimmer.status}
@@ -136,7 +131,7 @@ export default function SwimmerList({ swimmers }: SwimmerListProps) {
           </tbody>
         </table>
       </div>
-    </div>
+    </section>
   )
 }
 

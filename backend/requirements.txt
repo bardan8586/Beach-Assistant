@@ -4,7 +4,7 @@
 # FastAPI & Server
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-python-multipart>=0.0.21
+python-multipart>=0.0.6
 websockets==12.0
 
 # MongoDB (Async)
@@ -17,4 +17,5 @@ pydantic-settings==2.1.0
 
 # Utilities
 python-dotenv==1.0.0
+opencv-python-headless>=4.8.0   # cv2 for video routes
 

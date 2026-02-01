@@ -5,8 +5,7 @@
  */
 
 import type { FrameResult } from '../types/frameResult'
-
-const API_BASE = 'http://localhost:8000'
+import { API_BASE_URL } from '../utils/constants'
 
 export const playbackService = {
   /**
@@ -17,7 +16,7 @@ export const playbackService = {
     if (fromMs !== undefined) params.append('from_ms', fromMs.toString())
     if (toMs !== undefined) params.append('to_ms', toMs.toString())
     
-    const url = `${API_BASE}/api/video/${videoId}/results${params.toString() ? '?' + params.toString() : ''}`
+    const url = `${API_BASE_URL}/api/video/${videoId}/results${params.toString() ? '?' + params.toString() : ''}`
     
     console.log(`📥 Loading frame results from: ${url}`)
     const response = await fetch(url)
@@ -37,7 +36,7 @@ export const playbackService = {
    * Load video metadata (dimensions, FPS, duration)
    */
   async loadMetadata(videoId: string): Promise<any> {
-    const url = `${API_BASE}/api/video/${videoId}/metadata`
+    const url = `${API_BASE_URL}/api/video/${videoId}/metadata`
     
     console.log(`📥 Loading metadata from: ${url}`)
     const response = await fetch(url)
@@ -55,6 +54,6 @@ export const playbackService = {
    * Get the video file URL
    */
   getVideoUrl(videoId: string, filename: string): string {
-    return `${API_BASE}/uploads/${videoId}/${filename}`
+    return `${API_BASE_URL}/uploads/${videoId}/${filename}`
   }
 }

@@ -148,42 +148,30 @@ export default function PriorityDashboard({
   
   if (topAlerts.length === 0) {
     return (
-      <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-2xl shadow-2xl p-12">
-        <div className="text-center">
-          <div className="text-8xl mb-6">✅</div>
-          <h2 className="text-4xl font-bold text-green-800 mb-2">All Clear</h2>
-          <p className="text-xl text-green-600">No swimmers at risk</p>
-          <p className="text-sm text-green-500 mt-4">
-            {alerts.length > 0 ? `${alerts.length} acknowledged alert(s)` : 'System monitoring'}
-          </p>
-        </div>
-      </div>
+      <section className="card p-8 text-center" aria-label="Priority alerts">
+        <div className="text-6xl sm:text-7xl mb-4">✅</div>
+        <h2 className="text-2xl font-bold text-emerald-800 mb-1">All Clear</h2>
+        <p className="text-emerald-600">No swimmers at risk</p>
+        <p className="mt-3 text-sm text-slate-500">
+          {alerts.length > 0 ? `${alerts.length} acknowledged alert(s)` : 'System monitoring'}
+        </p>
+      </section>
     )
   }
-  
+
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="bg-white rounded-xl shadow-lg p-4 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-          <h1 className="text-2xl font-bold text-gray-900">Priority Alerts</h1>
-          <span className="text-sm text-gray-500">Showing top {topAlerts.length} of {alerts.length}</span>
+      <div className="card p-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 animate-pulse" />
+          <h2 className="card-title-lg">Priority Alerts</h2>
+          <span className="text-sm text-slate-500">Top {topAlerts.length} of {alerts.length}</span>
         </div>
-        
-        <div className="flex items-center space-x-4">
-          <div className="text-sm">
-            <span className="font-semibold text-red-600">{alerts.filter(a => a.level === 'emergency' && !a.acknowledged).length}</span>
-            <span className="text-gray-500 ml-1">🔴</span>
-          </div>
-          <div className="text-sm">
-            <span className="font-semibold text-orange-600">{alerts.filter(a => a.level === 'alert' && !a.acknowledged).length}</span>
-            <span className="text-gray-500 ml-1">🟠</span>
-          </div>
-          <div className="text-sm">
-            <span className="font-semibold text-yellow-600">{alerts.filter(a => a.level === 'watch' && !a.acknowledged).length}</span>
-            <span className="text-gray-500 ml-1">🟡</span>
-          </div>
+        <div className="flex items-center gap-4 text-sm">
+          <span><strong className="text-red-600">{alerts.filter(a => a.level === 'emergency' && !a.acknowledged).length}</strong> <span className="text-slate-500">🔴</span></span>
+          <span><strong className="text-orange-600">{alerts.filter(a => a.level === 'alert' && !a.acknowledged).length}</strong> <span className="text-slate-500">🟠</span></span>
+          <span><strong className="text-yellow-600">{alerts.filter(a => a.level === 'watch' && !a.acknowledged).length}</strong> <span className="text-slate-500">🟡</span></span>
         </div>
       </div>
       
@@ -192,15 +180,16 @@ export default function PriorityDashboard({
         {topAlerts.map((alert) => {
           const colors = getLevelColor(alert.level)
           const isEmergency = alert.level === 'emergency'
-          
+
           return (
             <div
               key={alert.alert_id}
               className={`
                 ${colors.bg} ${isEmergency ? 'animate-pulse-slow' : ''}
-                rounded-2xl shadow-2xl overflow-hidden transform transition-all hover:scale-[1.02]
-                border-4 ${colors.border}
+                overflow-hidden rounded-xl border-4 transition-all hover:shadow-lg
+                ${colors.border}
               `}
+              style={{ borderRadius: 'var(--radius-card)' }}
             >
               <div className="p-6">
                 <div className="flex items-start justify-between mb-4">
@@ -274,10 +263,8 @@ export default function PriorityDashboard({
       
       {/* Acknowledged Alerts Summary */}
       {alerts.filter(a => a.acknowledged).length > 0 && (
-        <div className="bg-gray-100 rounded-xl p-4">
-          <p className="text-sm text-gray-600 text-center">
-            ✓ {alerts.filter(a => a.acknowledged).length} alert(s) acknowledged
-          </p>
+        <div className="card p-4 text-center">
+          <p className="text-sm text-slate-600">✓ {alerts.filter(a => a.acknowledged).length} alert(s) acknowledged</p>
         </div>
       )}
     </div>

@@ -64,72 +64,86 @@ function App() {
   const { isConnected: wsConnected } = useWebSocket({
     cameraId: selectedCamera,
     onMessage: (message) => {
-      console.log('📨 WebSocket message received:', message)
-      console.log('   Current camera:', selectedCamera)
-      console.log('   Message camera:', message.camera_id)
-      
-      // Handle FrameResult messages (new format with alerts)
-      if (message.swimmers || message.alerts) {
-        console.log('   FrameResult received:', message)
-        
-        // Update alerts if present
-        if (message.alerts && Array.isArray(message.alerts)) {
-          setAlerts(message.alerts)
-          
-          // Trigger audio alerts for new urgent alerts
-          message.alerts.forEach((alert: { alert_id: string; level: string; swimmer_id: number; zone: string; action_recommended: string; acknowledged?: boolean }) => {
+      // Backend sends { type: "frame_result", camera_id, data: FrameResult } — unwrap and use .data
+      const fr = (message as { type?: string; data?: FrameResult }).type === 'frame_result' && (message as { data?: FrameResult }).data
+        ? (message as { data: FrameResult }).data
+        : (message as unknown as FrameResult)
+
+      const swimmers = fr?.swimmers ?? (message as { swimmers?: FrameResult['swimmers'] }).swimmers
+      const alertsList = fr?.alerts ?? (message as { alerts?: FrameResult['alerts'] }).alerts
+      const isFrameResult = fr && typeof fr.frame_index === 'number' && typeof fr.video_width === 'number'
+
+      if (isFrameResult || swimmers || alertsList) {
+        const cam = (fr?.camera_id ?? (message as { camera_id?: string }).camera_id) || selectedCamera
+
+        if (alertsList && Array.isArray(alertsList)) {
+          setAlerts(alertsList)
+          alertsList.forEach((alert: { alert_id: string; level: string; swimmer_id: number; zone: string; action_recommended: string; acknowledged?: boolean }) => {
             if (!alert.acknowledged && (alert.level === 'emergency' || alert.level === 'alert')) {
-              audioAlertService.speakAlert(
-                alert.swimmer_id,
-                alert.level,
-                alert.zone,
-                alert.action_recommended,
-                alert.alert_id
-              )
+              audioAlertService.speakAlert(alert.swimmer_id, alert.level, alert.zone, alert.action_recommended, alert.alert_id)
             }
           })
         }
-        
-        // Update swimmers if present
-        if (message.swimmers && Array.isArray(message.swimmers)) {
-          const formattedSwimmers = message.swimmers.map((s: { track_id: number; bbox?: { x: number; y: number; w: number; h: number }; confidence?: number; risk_score?: number; risk_level?: string; behavior?: string; zone?: string; time_in_water?: number; velocity?: number }) => ({
+
+        if (swimmers && Array.isArray(swimmers)) {
+          const formattedSwimmers = swimmers.map((s: { track_id: number; bbox?: { x: number; y: number; w: number; h: number }; confidence?: number; risk_score?: number; risk_level?: string; behavior?: string; zone?: string; time_in_water?: number; velocity?: number }) => ({
             track_id: s.track_id,
-            camera_id: message.camera_id || selectedCamera,
+            camera_id: cam,
             bbox: s.bbox || { x: 0, y: 0, w: 0, h: 0 },
-            confidence: s.confidence || 0.8,
-            risk_score: s.risk_score || 0,
-            risk_level: s.risk_level || 'LOW',
-            behavior: s.behavior || 'NORMAL',
-            zone: s.zone || 'SAFE',
-            time_in_water: s.time_in_water || 0,
-            velocity: s.velocity || 0,
+            confidence: s.confidence ?? 0.8,
+            risk_score: s.risk_score ?? 0,
+            risk_level: s.risk_level ?? 'LOW',
+            behavior: s.behavior ?? 'NORMAL',
+            zone: s.zone ?? 'SAFE',
+            time_in_water: s.time_in_water ?? 0,
+            velocity: s.velocity ?? 0,
             first_seen: new Date().toISOString(),
             last_seen: new Date().toISOString(),
             status: 'active' as const
           }))
           updateSwimmers(formattedSwimmers)
         }
-      }
-      // Legacy format support
-      else if (message.type === 'swimmers' && message.data && Array.isArray(message.data)) {
-        const data = message.data as Array<{ track_id: number; bbox?: unknown; first_seen?: string; last_seen?: string; confidence?: number }>
-        if (message.camera_id === selectedCamera || message.camera_id === 'all') {
+
+        // Push frame into frameResults so VideoPlayer can draw overlays (OpenCV-style view)
+        if (isFrameResult && fr) {
+          const frame: FrameResult = {
+            video_id: fr.video_id ?? 'realtime',
+            camera_id: cam,
+            frame_index: fr.frame_index,
+            timestamp_ms: fr.timestamp_ms ?? 0,
+            video_width: fr.video_width,
+            video_height: fr.video_height,
+            swimmers: fr.swimmers ?? [],
+            scene: fr.scene,
+            metrics: fr.metrics,
+            alerts: fr.alerts ?? [],
+            system_mode: fr.system_mode ?? 'live'
+          }
+          setFrameResults(prev => {
+            const idx = prev.findIndex(f => f.frame_index === frame.frame_index)
+            const next = idx >= 0
+              ? prev.map((f, i) => (i === idx ? frame : f))
+              : [...prev, frame].sort((a, b) => a.frame_index - b.frame_index)
+            return next.length > 600 ? next.slice(-600) : next
+          })
+        }
+      } else if ((message as { type?: string }).type === 'swimmers' && (message as { data?: unknown }).data && Array.isArray((message as { data: unknown[] }).data)) {
+        const data = (message as { data: Array<{ track_id: number; bbox?: unknown; first_seen?: string; last_seen?: string; confidence?: number }> }).data
+        if ((message as { camera_id?: string }).camera_id === selectedCamera || (message as { camera_id?: string }).camera_id === 'all') {
           const formattedSwimmers = data.map((s) => ({
             track_id: s.track_id,
-            camera_id: message.camera_id ?? selectedCamera,
+            camera_id: (message as { camera_id: string }).camera_id ?? selectedCamera,
             bbox: s.bbox || { x1: 0, y1: 0, x2: 0, y2: 0 },
-            confidence: s.confidence || 0.8,
-            first_seen: s.first_seen || new Date().toISOString(),
-            last_seen: s.last_seen || new Date().toISOString(),
+            confidence: s.confidence ?? 0.8,
+            first_seen: s.first_seen ?? new Date().toISOString(),
+            last_seen: s.last_seen ?? new Date().toISOString(),
             status: 'active' as const
           }))
           updateSwimmers(formattedSwimmers)
         }
-      } else {
-        console.log('   Unknown message type:', message.type)
       }
     },
-    autoConnect: true  // Always auto-connect
+    autoConnect: true
   })
 
   // Update connection status
@@ -156,71 +170,74 @@ function App() {
     return () => clearInterval(interval)
   }, [selectedCamera, updateSwimmers])
 
-  // Handle video file selection
+  // Handle video file selection — upload only; user clicks "Start processing" to run AI
   const handleVideoSelected = async (file: File) => {
     setUploadedVideo(file)
-    setFrameResults([])  // Clear previous results
-    setPlaybackMode(false)  // Start in live mode
-    
-    // Create object URL for preview
+    setFrameResults([])
+    setPlaybackMode(false)
+    setPlaybackError(null)
+
     const url = URL.createObjectURL(file)
     setVideoUrl(url)
 
     try {
-      // Upload video to backend
       setProcessingStatus('uploading')
       const uploadResult = await videoService.uploadVideo(file)
       setVideoId(uploadResult.video_id)
-      
-      // Generate camera ID from video ID (use first 8 chars)
+
       const cameraId = `upload_${uploadResult.video_id.substring(0, 8)}`
-      console.log(`📹 Setting camera ID: ${cameraId}`)
       setSelectedCamera(cameraId)
-      
-      // Wait a moment for WebSocket to reconnect with new camera_id
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
-      // Start AI processing
-      setProcessingStatus('processing')
-      setProcessing(true)
-      const processResult = await videoService.processVideo(uploadResult.video_id, cameraId)
-      
+      setProcessingStatus('idle')  // Upload done; waiting for user to click "Start processing"
+    } catch (error) {
+      console.error('Error uploading video:', error)
+      setProcessingStatus('error')
+    }
+  }
+
+  // Start AI processing (called when user clicks "Start processing" button)
+  const handleStartProcessing = async () => {
+    if (!videoId) return
+    setPlaybackError(null)
+    setProcessingStatus('processing')
+    setProcessing(true)
+
+    const cameraId = selectedCamera || `upload_${videoId.substring(0, 8)}`
+    try {
+      await new Promise(resolve => setTimeout(resolve, 500))  // Let WebSocket reconnect if needed
+      const processResult = await videoService.processVideo(videoId, cameraId)
       console.log('🚀 AI processing started:', processResult)
-      console.log(`   Camera ID: ${cameraId}`)
-      console.log(`   Video ID: ${uploadResult.video_id}`)
-      setProcessingStatus('processing')
-      
-      // Poll for status updates
+
       const statusInterval = setInterval(async () => {
-        if (uploadResult.video_id) {
-          try {
-            const status = await videoService.getStatus(uploadResult.video_id)
-            if (status.status === 'completed') {
-              clearInterval(statusInterval)
-              setProcessingStatus('completed')
-              setProcessing(false)
-              setPlaybackError(null)
+        try {
+          const status = await videoService.getStatus(videoId)
+          if (status.status === 'completed') {
+            clearInterval(statusInterval)
+            setProcessingStatus('completed')
+            setProcessing(false)
+            setPlaybackError(null)
+            if (status.return_code !== undefined && status.return_code !== 0) {
+              setPlaybackError(
+                `Processing failed (exit code ${status.return_code}). Check backend logs. If you see "No module named 'torch'" or "ultralytics", run: cd ai && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt`
+              )
+            } else {
               try {
-                const results = await playbackService.loadFrameResults(uploadResult.video_id)
+                const results = await playbackService.loadFrameResults(videoId)
                 setFrameResults(results)
                 setPlaybackMode(true)
               } catch {
                 setPlaybackError('Processing finished but results could not be loaded. Use "Load results" to retry.')
               }
             }
-          } catch (error) {
-            console.error('Status check error:', error)
           }
+        } catch (error) {
+          console.error('Status check error:', error)
         }
       }, 2000)
-      
-      // Store interval to cleanup if component unmounts
-      return () => clearInterval(statusInterval)
-      
     } catch (error) {
-      console.error('Error processing video:', error)
+      console.error('Error starting processing:', error)
       setProcessingStatus('error')
       setProcessing(false)
+      setPlaybackError('Failed to start AI processing. Check backend is running and see browser console.')
     }
   }
   
@@ -278,67 +295,56 @@ function App() {
     : null
 
   return (
-    <div className="min-h-screen bg-slate-100">
+    <div className="min-h-screen" style={{ backgroundColor: 'rgb(var(--color-surface))' }}>
       <Header
         selectedCamera={selectedCamera}
         isConnected={wsConnected}
         processingStatus={processingStatus}
+        frameCount={frameResults.length}
       />
 
       {/* Main Dashboard */}
-      <main className="container mx-auto px-6 py-6">
+      <main className="container mx-auto px-4 sm:px-6 py-6 max-w-[1600px]">
         {/* Top Stats Row */}
-        <div className="mb-6">
+        <section className="mb-6" aria-label="Statistics">
           <DetailedStats swimmers={swimmers} />
-        </div>
+        </section>
 
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           {/* Left Column: Video Section (2/3 width) */}
           <div className="lg:col-span-2 space-y-6">
             {/* Video Upload or Player */}
-            <div className="bg-white rounded-lg shadow-lg p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900 flex items-center">
-                  <span className="mr-2">📹</span>
+            <section className="card p-5" aria-label={uploadedVideo ? 'Video analysis' : 'Upload video'}>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <h2 className="card-title-lg flex items-center gap-2">
+                  <span aria-hidden>📹</span>
                   {uploadedVideo ? 'Video Analysis' : 'Upload Video'}
                 </h2>
                 {uploadedVideo && (
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {playbackMode && (
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-medium">
-                        🎬 PLAYBACK
+                      <span className="status-pill bg-emerald-100 text-emerald-800">
+                        🎬 Playback
                       </span>
                     )}
                     <button
                       onClick={toggleBoundingBoxes}
-                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                        showBoundingBoxes
-                          ? 'bg-green-600 text-white shadow-lg'
-                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
+                      className={`btn-toggle ${showBoundingBoxes ? 'btn-toggle-active bg-emerald-600 hover:bg-emerald-700' : 'btn-toggle-inactive'}`}
                     >
-                      {showBoundingBoxes ? '✓' : ''} Boxes
+                      {showBoundingBoxes ? '✓ ' : ''}Boxes
                     </button>
                     <button
                       onClick={toggleZones}
-                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                        showZones
-                          ? 'bg-blue-600 text-white shadow-lg'
-                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
+                      className={`btn-toggle ${showZones ? 'btn-toggle-active' : 'btn-toggle-inactive'}`}
                     >
-                      {showZones ? '✓' : ''} Zones
+                      {showZones ? '✓ ' : ''}Zones
                     </button>
                     <button
                       onClick={toggleHeatmap}
-                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                        showHeatmap
-                          ? 'bg-purple-600 text-white shadow-lg'
-                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
+                      className={`btn-toggle ${showHeatmap ? 'btn-toggle-active bg-violet-600 hover:bg-violet-700' : 'btn-toggle-inactive'}`}
                     >
-                      {showHeatmap ? '✓' : ''} Heatmap
+                      {showHeatmap ? '✓ ' : ''}Heatmap
                     </button>
                   </div>
                 )}
@@ -375,57 +381,71 @@ function App() {
                     onToggleHeatmap={toggleHeatmap}
                     onToggleZones={toggleZones}
                   />
-                  
+
+                  {/* Start processing — click this after upload to run AI; then use Play to watch with overlays */}
+                  {!processing && processingStatus === 'idle' && (
+                    <button
+                      type="button"
+                      onClick={handleStartProcessing}
+                      className="w-full py-3 rounded-lg font-semibold bg-primary-600 text-white hover:bg-primary-700 transition-colors"
+                      style={{ borderRadius: 'var(--radius-button)' }}
+                    >
+                      ▶ Start processing
+                    </button>
+                  )}
+
                   {/* Processing Status */}
                   {processing && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                      <div className="flex items-center space-x-3">
-                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                    <div className="space-y-2">
+                      <div className="card flex items-center gap-3 p-4 border-l-4 border-l-blue-500 bg-blue-50/50">
+                        <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-600 border-t-transparent" />
                         <div>
                           <div className="font-medium text-blue-900">AI Processing Active</div>
-                          <div className="text-sm text-blue-700">
-                            Detecting swimmers and tracking in real-time...
-                          </div>
+                          <div className="text-sm text-blue-700">Detecting swimmers and tracking in real-time…</div>
                         </div>
                       </div>
+                      {frameResults.length === 0 && (
+                        <p className="text-xs text-slate-500 px-1" role="status">
+                          No frames yet. If this stays for 30+ seconds: check the backend terminal for &quot;Started AI processing&quot; and &quot;Ingested FrameResult&quot; or errors.
+                        </p>
+                      )}
                     </div>
                   )}
-                  
+
                   {/* Playback Mode Indicator */}
                   {playbackMode && (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className="text-2xl">🎬</div>
-                          <div>
-                            <div className="font-medium text-green-900">Playback Mode</div>
-                            <div className="text-sm text-green-700">
-                              {frameResults.length} frames loaded | Pixel-perfect overlays active
-                            </div>
+                    <div className="card flex flex-wrap items-center justify-between gap-3 p-4 border-l-4 border-l-emerald-500 bg-emerald-50/50">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl" aria-hidden>🎬</span>
+                        <div>
+                          <div className="font-medium text-emerald-900">Playback Mode</div>
+                          <div className="text-sm text-emerald-700">
+                            {frameResults.length} frames loaded · Overlays synced
                           </div>
                         </div>
-                        <button 
-                          onClick={() => setPlaybackMode(false)}
-                          className="px-3 py-1.5 bg-white border border-green-300 text-green-700 rounded text-sm hover:bg-green-50"
-                        >
-                          Exit Playback
-                        </button>
                       </div>
+                      <button
+                        onClick={() => setPlaybackMode(false)}
+                        className="btn-toggle bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                      >
+                        Exit Playback
+                      </button>
                     </div>
                   )}
-                  
+
                   {/* Load Playback Button */}
                   {!playbackMode && !processing && processingStatus === 'completed' && (
                     <button
                       onClick={loadPlaybackData}
-                      className="w-full py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
+                      className="w-full py-3 rounded-lg font-medium transition-colors bg-emerald-600 text-white hover:bg-emerald-700"
+                      style={{ borderRadius: 'var(--radius-button)' }}
                     >
                       🎬 Load Playback Mode (Instant Replay)
                     </button>
                   )}
                 </div>
               )}
-            </div>
+            </section>
 
             {/* Swimmer List */}
             <SwimmerList swimmers={swimmers} />
@@ -434,67 +454,74 @@ function App() {
           {/* Right Column: Priority Dashboard (1/3 width) */}
           <div className="lg:col-span-1 space-y-6">
             {/* Audio Control */}
-            <div className="flex items-center justify-between bg-white rounded-lg shadow p-3">
-              <span className="text-sm font-medium text-gray-700">Audio Alerts</span>
+            <div className="card flex items-center justify-between p-4">
+              <span className="card-title">Audio Alerts</span>
               <button
                 onClick={toggleAudio}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  audioEnabled 
-                    ? 'bg-green-600 text-white hover:bg-green-700' 
-                    : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
-                }`}
+                className={`btn-toggle px-4 py-2 ${audioEnabled ? 'btn-toggle-active bg-emerald-600 hover:bg-emerald-700' : 'btn-toggle-inactive'}`}
               >
                 {audioEnabled ? '🔊 ON' : '🔇 OFF'}
               </button>
             </div>
-            
+
             {/* Priority Dashboard */}
-            <PriorityDashboard 
-              alerts={alerts} 
+            <PriorityDashboard
+              alerts={alerts}
               onAcknowledge={handleAcknowledgeAlert}
               onFocus={handleFocusSwimmer}
               audioEnabled={audioEnabled}
             />
-            
-            {/* System Info */}
-            <div className="bg-white rounded-lg shadow-lg p-4">
-              <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
-                <span className="mr-2">ℹ️</span>
+
+            {/* System Status */}
+            <section className="card p-5" aria-label="System status">
+              <h3 className="card-title-lg mb-4 flex items-center gap-2">
+                <span aria-hidden>ℹ️</span>
                 System Status
               </h3>
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Backend API:</span>
-                  <span className="font-medium text-green-600">Online</span>
+              <dl className="space-y-3 text-sm">
+                <div className="flex justify-between gap-2">
+                  <dt className="text-slate-600">Backend API</dt>
+                  <dd className="font-medium text-emerald-600">Online</dd>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">WebSocket:</span>
-                  <span className={`font-medium ${wsConnected ? 'text-green-600' : 'text-red-600'}`}>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-slate-600">WebSocket</dt>
+                  <dd className={`font-medium ${wsConnected ? 'text-emerald-600' : 'text-red-600'}`}>
                     {wsConnected ? 'Connected' : 'Disconnected'}
-                  </span>
+                  </dd>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">AI Pipeline:</span>
-                  <span className={`font-medium ${swimmers.length > 0 ? 'text-green-600' : 'text-yellow-600'}`}>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-slate-600">AI Pipeline</dt>
+                  <dd className={`font-medium ${swimmers.length > 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
                     {swimmers.length > 0 ? 'Active' : 'Waiting'}
-                  </span>
+                  </dd>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Video Status:</span>
-                  <span className={`font-medium ${
+                <div className="flex justify-between gap-2">
+                  <dt className="text-slate-600">Video</dt>
+                  <dd className={`font-medium ${
                     processingStatus === 'processing' ? 'text-blue-600' :
-                    processingStatus === 'completed' ? 'text-green-600' :
-                    'text-gray-600'
+                    processingStatus === 'completed' ? 'text-emerald-600' : 'text-slate-600'
                   }`}>
                     {processingStatus === 'idle' ? 'No video' :
-                     processingStatus === 'uploading' ? 'Uploading...' :
-                     processingStatus === 'processing' ? 'Processing...' :
+                     processingStatus === 'uploading' ? 'Uploading…' :
+                     processingStatus === 'processing' ? 'Processing…' :
                      processingStatus === 'completed' ? 'Complete' :
                      processingStatus === 'error' ? 'Error' : 'Ready'}
-                  </span>
+                  </dd>
                 </div>
-              </div>
-            </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-slate-600">Data stream</dt>
+                  <dd className={`font-medium ${
+                    frameResults.length > 0 ? 'text-emerald-600' : wsConnected ? 'text-amber-600' : 'text-slate-500'
+                  }`} title={frameResults.length > 0 ? 'Frames received from backend' : wsConnected ? 'Connected, waiting for frames' : 'Not connected'}>
+                    {frameResults.length > 0
+                      ? `Receiving frames (${frameResults.length})`
+                      : wsConnected
+                        ? 'No frames yet'
+                        : '—'}
+                  </dd>
+                </div>
+              </dl>
+            </section>
           </div>
         </div>
       </main>

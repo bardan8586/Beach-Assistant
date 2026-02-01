@@ -54,9 +54,10 @@ async def ingest_data(frame_result: FrameResult):
                 video_id=frame_result.video_id,
                 frame_result=frame_result.model_dump()  # Convert Pydantic model to dict
             )
-            logger.debug(f"✅ Saved frame {frame_result.frame_index} to storage")
+            if frame_result.frame_index % 30 == 0:
+                logger.debug(f"✅ Saved frame {frame_result.frame_index} to storage")
         except Exception as e:
-            logger.error(f"❌ Failed to store frame result: {e}")
+            logger.error(f"❌ Failed to store frame result for video_id={frame_result.video_id}: {e}", exc_info=True)
         
         # Update camera last_seen
         if database.database is not None:
