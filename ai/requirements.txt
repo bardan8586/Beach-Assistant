@@ -4,7 +4,10 @@
 # Detection (YOLOv8 + pose)
 ultralytics>=8.0.0
 torch>=2.0.0
-opencv-python-headless>=4.8.0
+# Use GUI-enabled OpenCV so `SHOW_WINDOW=true` can open cv2.imshow windows on desktop.
+# If you are running on a headless server/container, you can swap this for:
+# opencv-python-headless>=4.8.0
+opencv-python>=4.8.0
 
 # Pipeline
 numpy>=1.24.0

@@ -14,6 +14,7 @@ import subprocess
 import threading
 import logging
 import cv2
+import json
 from typing import Optional
 from app.utils import results_storage
 
@@ -27,6 +28,56 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 # Store active processing jobs
 processing_jobs = {}
+
+def _run_ai_preflight(python_cmd: str) -> dict:
+    """
+    Validate the AI Python environment before spawning the long-running pipeline.
+
+    Why: avoids "started processing" but no frames due to missing deps (cv2/torch/ultralytics).
+    Returns a JSON-serializable dict with import results.
+    """
+    probe_code = r"""
+import json, sys, importlib, platform
+mods = ["cv2", "torch", "ultralytics"]
+out = {
+  "executable": sys.executable,
+  "version": sys.version,
+  "platform": platform.platform(),
+  "imports": {}
+}
+for m in mods:
+  try:
+    mod = importlib.import_module(m)
+    out["imports"][m] = {"ok": True, "version": getattr(mod, "__version__", None)}
+  except Exception as e:
+    out["imports"][m] = {"ok": False, "error": str(e)}
+print(json.dumps(out))
+"""
+    completed = subprocess.run(
+        [python_cmd, "-c", probe_code],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    stdout = (completed.stdout or "").strip()
+    stderr = (completed.stderr or "").strip()
+    try:
+        data = json.loads(stdout) if stdout else {"error": "no_stdout", "stderr": stderr}
+    except Exception:
+        data = {"error": "invalid_json", "stdout": stdout[:500], "stderr": stderr[:500]}
+    data["_returncode"] = completed.returncode
+    if stderr:
+        data["_stderr_preview"] = stderr[:500]
+    return data
+
+
+@router.get("/preflight")
+async def ai_preflight():
+    """Return AI environment health (imports + versions) for the configured AI python."""
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
+    ai_venv_python = project_root / "ai" / "venv" / "bin" / "python"
+    python_cmd = str(ai_venv_python) if ai_venv_python.exists() else ("python3" if shutil.which("python3") else "python")
+    return {"python_cmd": python_cmd, "preflight": _run_ai_preflight(python_cmd)}
 
 
 @router.post("/upload")
@@ -95,7 +146,7 @@ async def upload_video(file: UploadFile = File(...)):
 
 
 @router.post("/process/{video_id}")
-async def process_video(video_id: str, camera_id: Optional[str] = None):
+async def process_video(video_id: str, camera_id: Optional[str] = None, show_window: bool = False):
     """
     Trigger AI processing on uploaded video
     
@@ -147,7 +198,9 @@ async def process_video(video_id: str, camera_id: Optional[str] = None):
         env["CAMERA_ID"] = camera_id
         env["VIDEO_ID"] = video_id  # So ingest stores under this video_id for playback
         env["SEND_TO_BACKEND"] = "true"
-        env["SHOW_WINDOW"] = "false"  # Disable OpenCV window for web mode
+        # If enabled, the AI subprocess will open a local OpenCV window (cv2.imshow).
+        # Note: this only appears on the machine running the backend/AI with a GUI session.
+        env["SHOW_WINDOW"] = "true" if show_window else "false"
         
         # Use AI venv Python if it exists (has torch/ultralytics); else system python3
         ai_venv_python = project_root / "ai" / "venv" / "bin" / "python"
@@ -159,6 +212,28 @@ async def process_video(video_id: str, camera_id: Optional[str] = None):
             logger.warning(
                 "AI venv not found at ai/venv. Install AI deps: cd ai && python3 -m venv venv && pip install -r requirements.txt"
             )
+
+        # Preflight AI environment so we fail fast with a helpful message.
+        try:
+            preflight = _run_ai_preflight(python_cmd)
+            imports = preflight.get("imports") or {}
+            missing = [m for m, v in imports.items() if isinstance(v, dict) and not v.get("ok")]
+            if missing:
+                logger.error("AI preflight failed. Missing/failed imports: %s. Details: %s", missing, preflight)
+                raise HTTPException(
+                    status_code=500,
+                    detail={
+                        "error": "ai_preflight_failed",
+                        "missing": missing,
+                        "preflight": preflight,
+                        "fix": f'Run: "{python_cmd}" -m pip install -r "{project_root / "ai" / "requirements.txt"}"',
+                    },
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("AI preflight crashed: %s", e)
+            raise HTTPException(status_code=500, detail={"error": "ai_preflight_crashed", "message": str(e)})
         
         # Start processing (non-blocking)
         # Change to ai directory so imports work correctly

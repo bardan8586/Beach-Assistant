@@ -112,13 +112,30 @@ npm run dev
 
 ### 4. AI Pipeline Setup
 ```bash
-# Install AI dependencies
-pip install -r requirements.txt
-
-# Run AI pipeline
 cd ai
-python main.py
+python3 -m venv venv
+
+# IMPORTANT: always use the venv's python for pip to avoid version mismatches.
+./venv/bin/python -m pip install -r requirements.txt
+
+# (Optional) quick import check
+./venv/bin/python -c "import cv2, torch, ultralytics; print('AI deps OK')"
+
+# Run AI pipeline (local test)
+./venv/bin/python main.py
 ```
+
+### AI Troubleshooting (common)
+- If backend logs show `[AI] ModuleNotFoundError: No module named 'cv2'` (or `torch` / `ultralytics`), install using the venv python:
+
+```bash
+cd ai
+./venv/bin/python -m pip install -r requirements.txt
+```
+
+### Backend AI Preflight
+Before processing a video, you can verify the AI environment via:
+- `GET /api/video/preflight` (returns Python path + import status for `cv2`, `torch`, `ultralytics`)
 
 ## ⚙️ Configuration
 

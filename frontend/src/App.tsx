@@ -30,6 +30,7 @@ function App() {
   const [videoId, setVideoId] = useState<string | null>(null)
   const [processing, setProcessing] = useState(false)
   const [processingStatus, setProcessingStatus] = useState<string>('idle')
+  const [openCvWindow, setOpenCvWindow] = useState(false)
   
   // FrameResult data for playback mode
   const [frameResults, setFrameResults] = useState<FrameResult[]>([])
@@ -204,7 +205,10 @@ function App() {
     const cameraId = selectedCamera || `upload_${videoId.substring(0, 8)}`
     try {
       await new Promise(resolve => setTimeout(resolve, 500))  // Let WebSocket reconnect if needed
-      const processResult = await videoService.processVideo(videoId, cameraId)
+      const processResult = await videoService.processVideo(videoId, {
+        camera_id: cameraId,
+        show_window: openCvWindow
+      })
       console.log('🚀 AI processing started:', processResult)
 
       const statusInterval = setInterval(async () => {
@@ -323,6 +327,16 @@ function App() {
                 </h2>
                 {uploadedVideo && (
                   <div className="flex items-center gap-2 flex-wrap">
+                    <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={openCvWindow}
+                        onChange={(e) => setOpenCvWindow(e.target.checked)}
+                        disabled={processing}
+                      />
+                      OpenCV window
+                    </label>
                     {playbackMode && (
                       <span className="status-pill bg-emerald-100 text-emerald-800">
                         🎬 Playback

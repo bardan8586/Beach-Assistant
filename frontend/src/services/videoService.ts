@@ -24,6 +24,11 @@ export interface VideoProcessResponse {
   status: string
 }
 
+export interface VideoProcessParams {
+  camera_id?: string
+  show_window?: boolean
+}
+
 export interface ProcessingStatus {
   video_id: string
   status: 'not_found' | 'processing' | 'completed'
@@ -55,12 +60,12 @@ export const videoService = {
   /**
    * Start AI processing on uploaded video
    */
-  async processVideo(videoId: string, cameraId?: string): Promise<VideoProcessResponse> {
+  async processVideo(videoId: string, params?: VideoProcessParams): Promise<VideoProcessResponse> {
     const response = await axios.post<VideoProcessResponse>(
       `${API_URL}/api/video/process/${videoId}`,
       null,
       {
-        params: cameraId ? { camera_id: cameraId } : {},
+        params: params ?? {},
       }
     )
 
