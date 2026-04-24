@@ -29,17 +29,15 @@ def filter_by_size(detections: List[Tuple[int, int, int, int, float]],
     """
     if not detections:
         return []
-    
     frame_area = frame_shape[0] * frame_shape[1]
     filtered = []
-    
-    for x1, y1, x2, y2, conf in detections:
+    for det in detections:
+        x1, y1, x2, y2, conf = det[0], det[1], det[2], det[3], det[4]
+        class_name = det[5] if len(det) > 5 else "person"
         box_area = (x2 - x1) * (y2 - y1)
         area_ratio = box_area / frame_area
-        
         if min_size_ratio <= area_ratio <= max_size_ratio:
-            filtered.append((x1, y1, x2, y2, conf))
-    
+            filtered.append((x1, y1, x2, y2, conf, class_name))
     return filtered
 
 
@@ -60,17 +58,15 @@ def filter_by_position(detections: List[Tuple[int, int, int, int, float]],
     """
     if not detections:
         return []
-    
     frame_height = frame_shape[0]
     water_zone_top = int(frame_height * (1 - water_zone_ratio))
     filtered = []
-    
-    for x1, y1, x2, y2, conf in detections:
-        # Check if detection center is in water zone (lower part of frame)
+    for det in detections:
+        x1, y1, x2, y2, conf = det[0], det[1], det[2], det[3], det[4]
+        class_name = det[5] if len(det) > 5 else "person"
         center_y = (y1 + y2) // 2
         if center_y >= water_zone_top:
-            filtered.append((x1, y1, x2, y2, conf))
-    
+            filtered.append((x1, y1, x2, y2, conf, class_name))
     return filtered
 
 

@@ -29,6 +29,7 @@ interface VideoPlayerProps {
   showZones: boolean  // New: Show water zones
   cameraId: string
   videoUrl?: string
+  isLive?: boolean  // true while AI is actively streaming frames
   onToggleBoxes?: () => void
   onToggleHeatmap?: () => void
   onToggleZones?: () => void
@@ -41,6 +42,7 @@ export default function VideoPlayer({
   showZones,
   cameraId,
   videoUrl,
+  isLive = false,
   onToggleBoxes,
   onToggleHeatmap,
   onToggleZones
@@ -229,8 +231,8 @@ export default function VideoPlayer({
   return (
     <div
       ref={containerRef}
-      className="relative overflow-hidden aspect-video rounded-lg bg-slate-900"
-      style={{ borderRadius: 'var(--radius-card)' }}
+      className="relative aspect-video overflow-hidden rounded-2xl bg-slate-950 ring-1 ring-slate-900/60 shadow-inner"
+      style={{ borderRadius: 'var(--radius-video)' }}
     >
       {/* Video Element */}
       {videoUrl ? (
@@ -244,14 +246,14 @@ export default function VideoPlayer({
       ) : (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-center text-white">
-            <div className="text-6xl mb-4">📹</div>
+            <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">No video signal</p>
             <p className="text-xl font-medium">Camera {cameraId}</p>
-            <p className="text-sm text-gray-400 mt-2">
+            <p className="mt-2 text-sm text-slate-400">
               {frameResults.length > 0
                 ? `${frameResults.length} frames loaded` 
                 : 'Waiting for video stream...'}
             </p>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="mt-1 text-xs text-slate-500">
               API: {API_BASE_URL}
             </p>
           </div>
@@ -265,11 +267,24 @@ export default function VideoPlayer({
         style={{ zIndex: 10 }}
       />
 
+      {/* LIVE indicator — appears when the AI is actively streaming frames */}
+      {isLive && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white shadow-lg">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+          </span>
+          LIVE AI
+        </div>
+      )}
+
       {/* Swimmer count overlay */}
       <div className="absolute top-3 left-3 z-20 space-y-1 rounded-lg bg-black/80 px-3 py-2 backdrop-blur-sm" style={{ borderRadius: 'var(--radius-button)' }}>
-        <p className="text-sm font-semibold text-white">🏊 Swimmers: {swimmerCount}</p>
+        <p className="text-sm font-semibold text-white">Swimmers: {swimmerCount}</p>
         {activeAlerts > 0 && (
-          <p className="text-xs font-medium text-red-400 animate-pulse">⚠️ {activeAlerts} Active Alert{activeAlerts > 1 ? 's' : ''}</p>
+          <p className="animate-pulse text-xs font-medium text-red-400">
+            {activeAlerts} active alert{activeAlerts > 1 ? 's' : ''}
+          </p>
         )}
         {currentFrameResult && (
           <p className="text-xs text-slate-400">Frame {currentFrameResult.frame_index} · {(currentFrameResult.timestamp_ms / 1000).toFixed(1)}s</p>

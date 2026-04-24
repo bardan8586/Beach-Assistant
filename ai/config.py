@@ -29,9 +29,11 @@ MULTI_SCALE_DETECTION = os.getenv("MULTI_SCALE_DETECTION", "false").lower() == "
 DETECTOR_TYPE = os.getenv("DETECTOR_TYPE", "yolo")
 
 # YOLOv8 model selection (only used if DETECTOR_TYPE="yolo")
-# Options: yolov8n.pt (nano, fastest), yolov8s.pt (small, balanced), 
-#          yolov8m.pt (medium, better accuracy), yolov8l.pt (large), yolov8x.pt (xlarge, best)
-MODEL_NAME = os.getenv("MODEL_NAME", "yolov8s.pt")  # Default: small for better accuracy
+# Options: yolov8n.pt (nano), yolov8s.pt (small), or path to fine-tuned weights (e.g. runs/.../best.pt)
+# If MODEL_NAME is not set, we use our fine-tuned Roboflow model when it exists, else yolov8s.pt
+_FINETUNED_WEIGHTS = Path(__file__).resolve().parent / "runs" / "detect" / "runs-mai600" / "roboflow_v2_yolov8n_e5" / "weights" / "best.pt"
+_MODEL_DEFAULT = str(_FINETUNED_WEIGHTS) if _FINETUNED_WEIGHTS.exists() else "yolov8s.pt"
+MODEL_NAME = os.getenv("MODEL_NAME", _MODEL_DEFAULT)
 
 # Detection confidence threshold (0.0 to 1.0)
 # Higher = fewer false positives but might miss some swimmers

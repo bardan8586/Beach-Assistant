@@ -35,17 +35,19 @@ class TrackedPerson:
     """
     Data structure for one tracked person.
     """
-    def __init__(self, 
-                 track_id: int, 
-                 bbox: Tuple[int, int, int, int], 
-                 confidence: float, 
-                 first_seen: float, 
-                 last_seen: float):
+    def __init__(self,
+                 track_id: int,
+                 bbox: Tuple[int, int, int, int],
+                 confidence: float,
+                 first_seen: float,
+                 last_seen: float,
+                 class_name: str = "person"):
         self.track_id = track_id
         self.bbox = bbox  # (x1, y1, x2, y2)
         self.confidence = confidence
         self.first_seen = first_seen  # unix timestamp
         self.last_seen = last_seen    # unix timestamp
+        self.class_name = class_name  # e.g. Drowning, Swimming, person (from fine-tuned model)
 
     def to_dict(self):
         return {
@@ -54,6 +56,7 @@ class TrackedPerson:
             "confidence": self.confidence,
             "first_seen": self.first_seen,
             "last_seen": self.last_seen,
+            "class_name": self.class_name,
         }
 
 class PersonTracker:
@@ -134,49 +137,46 @@ class PersonTracker:
     ) -> List[TrackedPerson]:
         """
         Run tracking step for the current frame.
-        detections: list of (x1, y1, x2, y2, conf)
+        detections: list of (x1, y1, x2, y2, conf) or (x1, y1, x2, y2, conf, class_name)
         timestamp: current frame time (seconds). If None, uses time.time().
         Returns list of TrackedPerson visible in this frame.
         """
         if timestamp is None:
             timestamp = time.time()
-        
         norfair_detections = []
         for det in detections:
-            x1, y1, x2, y2, conf = det
+            x1, y1, x2, y2, conf = det[0], det[1], det[2], det[3], det[4]
+            class_name = det[5] if len(det) > 5 else "person"
             if conf < self.min_detection_conf:
-                continue  # Skip extremely weak boxes (should rarely happen)
+                continue
             points = self._bbox_to_points((x1, y1, x2, y2))
             norfair_det = Detection(
                 points=points,
                 scores=np.array([conf]),
                 data={"bbox": np.array([x1, y1, x2, y2]),
-                      "confidence": conf}
+                      "confidence": conf,
+                      "class_name": class_name}
             )
             norfair_detections.append(norfair_det)
 
         tracked_objects = self.tracker.update(norfair_detections)
-
         results = []
         for obj in tracked_objects:
-            # Norfair's TrackedObject has a unique ID
             tid = obj.id
-            # Get most recent detection for this track
             detection = obj.last_detection
             bbox = tuple(int(v) for v in detection.data["bbox"])
             conf = float(detection.data["confidence"])
-
-            # Maintain first_seen, last_seen timestamps
+            class_name = detection.data.get("class_name", "person")
             if tid not in self.first_seen:
                 self.first_seen[tid] = timestamp
             self.last_seen[tid] = timestamp
-
             person = TrackedPerson(
                 track_id=tid,
                 bbox=bbox,
                 confidence=conf,
                 first_seen=self.first_seen[tid],
-                last_seen=self.last_seen[tid]
+                last_seen=self.last_seen[tid],
+                class_name=class_name,
             )
             results.append(person)
 

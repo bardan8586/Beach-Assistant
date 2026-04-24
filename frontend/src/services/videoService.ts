@@ -36,11 +36,18 @@ export interface ProcessingStatus {
   return_code?: number
 }
 
+const UPLOAD_TIMEOUT_MS = 6 * 60 * 1000 // large clips on slow uplinks
+
 export const videoService = {
   /**
    * Upload video file to backend
+   * @param file Video file to upload
+   * @param onProgress Optional callback for upload progress (0-100)
    */
-  async uploadVideo(file: File): Promise<VideoUploadResponse> {
+  async uploadVideo(
+    file: File,
+    onProgress?: (percent: number) => void,
+  ): Promise<VideoUploadResponse> {
     const formData = new FormData()
     formData.append('file', file)
 
@@ -48,8 +55,14 @@ export const videoService = {
       `${API_URL}/api/video/upload`,
       formData,
       {
+        timeout: UPLOAD_TIMEOUT_MS,
         headers: {
           'Content-Type': 'multipart/form-data',
+        },
+        onUploadProgress: (evt) => {
+          if (!onProgress || !evt.total) return
+          const pct = Math.round((evt.loaded / evt.total) * 100)
+          onProgress(pct)
         },
       }
     )

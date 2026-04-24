@@ -3,25 +3,33 @@
 @tailwind utilities;
 
 /* ============================================
-   Beach Safety — Design system (government-grade)
+   Beach Assistant — command-centre design system
+   Tokens only: components use these + Tailwind for layout.
    ============================================ */
 :root {
-  --color-surface: 241 245 249;
-  --color-surface-card: 255 255 255;
-  --color-surface-header: 30 41 59;
-  --color-primary: 30 64 175;
-  --color-primary-soft: 224 231 255;
-  --color-success: 22 163 74;
-  --color-warning: 202 138 4;
-  --color-danger: 185 28 28;
-  --color-muted: 100 116 139;
-  --radius-card: 0.75rem;
-  --radius-button: 0.5rem;
-  --radius-video: 0.5rem;
-  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06);
-  --shadow-card-hover: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.07);
-  --spacing-section: 1.5rem;
-  --spacing-block: 1rem;
+  --font-sans: 'DM Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Surfaces (RGB triplets for rgb(var(--x))) */
+  --cc-bg-deep: 2 6 14;
+  --cc-bg-base: 15 23 42;
+  --cc-bg-raised: 22 36 54;
+  --cc-bg-panel: 30 41 59;
+  --cc-border: 51 65 85;
+  --cc-border-subtle: 71 85 105;
+
+  --cc-text-primary: 248 250 252;
+  --cc-text-secondary: 203 213 225;
+  --cc-text-muted: 148 163 184;
+
+  --cc-accent: 34 211 238;
+  --cc-accent-dim: 8 145 178;
+
+  --radius-card: 1rem;
+  --radius-button: 0.625rem;
+  --radius-video: 0.875rem;
+
+  --shadow-panel: 0 4px 24px -6px rgb(0 0 0 / 0.45);
+  --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 0.04);
 }
 
 * {
@@ -30,83 +38,249 @@
   box-sizing: border-box;
 }
 
-body {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background-color: rgb(var(--color-surface));
-  color: #0f172a;
+html {
+  scroll-behavior: smooth;
 }
 
-/* Card base */
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: rgb(var(--cc-text-primary));
+  background-color: rgb(var(--cc-bg-deep));
+}
+
+/* Page shell */
+.app-bg {
+  min-height: 100vh;
+  background-color: rgb(var(--cc-bg-deep));
+  background-image:
+    radial-gradient(ellipse 100% 80% at 50% -30%, rgb(8 47 73 / 0.55), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 100% 0%, rgb(14 116 144 / 0.18), transparent 42%),
+    radial-gradient(ellipse 50% 40% at 0% 15%, rgb(30 58 138 / 0.12), transparent 38%);
+}
+
+/* Primary panel */
 .card {
-  background-color: rgb(var(--color-surface-card));
+  background-color: rgb(var(--cc-bg-panel) / 0.72);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  border: 1px solid rgb(226 232 240);
+  border: 1px solid rgb(var(--cc-border) / 0.45);
+  box-shadow: var(--shadow-panel), var(--shadow-inset);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-elevated {
+  border-color: rgb(var(--cc-border-subtle) / 0.5);
 }
 
 .card-title {
-  font-size: 0.9375rem;
+  font-size: 0.6875rem;
   font-weight: 600;
-  color: #0f172a;
-  letter-spacing: -0.01em;
+  color: rgb(var(--cc-text-muted));
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .card-title-lg {
-  font-size: 1.125rem;
+  font-size: 1.0625rem;
   font-weight: 600;
-  color: #0f172a;
-  letter-spacing: -0.01em;
+  color: rgb(var(--cc-text-primary));
+  letter-spacing: -0.02em;
 }
 
-/* Buttons — consistent with design system */
+/* Sticky clip strip */
+.cc-upload-strip {
+  background-color: rgb(var(--cc-bg-raised) / 0.82);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+}
+
+/* Toggles */
 .btn-toggle {
-  padding: 0.375rem 0.75rem;
+  padding: 0.4rem 0.85rem;
   border-radius: var(--radius-button);
   font-size: 0.8125rem;
   font-weight: 500;
-  transition: background-color 0.15s, color 0.15s;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .btn-toggle-active {
-  background-color: rgb(var(--color-primary));
+  background: linear-gradient(165deg, rgb(14 165 233), rgb(8 145 178));
   color: white;
-  box-shadow: var(--shadow-card);
+  border: 1px solid rgb(34 211 238 / 0.35);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.2) inset;
+}
+
+.btn-toggle-active:hover {
+  filter: brightness(1.06);
 }
 
 .btn-toggle-inactive {
-  background-color: rgb(226 232 240);
-  color: #475569;
+  background-color: rgb(var(--cc-bg-base) / 0.9);
+  color: rgb(var(--cc-text-secondary));
+  border: 1px solid rgb(var(--cc-border) / 0.65);
 }
 
 .btn-toggle-inactive:hover {
-  background-color: rgb(203 213 225);
+  background-color: rgb(var(--cc-bg-panel) / 0.95);
+  border-color: rgb(var(--cc-border-subtle) / 0.9);
+  color: rgb(var(--cc-text-primary));
 }
 
-/* Status pills */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.15rem;
+  border-radius: var(--radius-button);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: white;
+  background: linear-gradient(165deg, rgb(14 165 233), rgb(8 145 178));
+  border: 1px solid rgb(34 211 238 / 0.25);
+  box-shadow: 0 2px 12px rgb(8 145 178 / 0.35);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: 0 4px 18px rgb(8 145 178 / 0.45);
+}
+
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 0.95rem;
+  border-radius: var(--radius-button);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: rgb(var(--cc-text-primary));
+  background: rgb(var(--cc-bg-base) / 0.65);
+  border: 1px solid rgb(var(--cc-border) / 0.85);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgb(var(--cc-bg-panel) / 0.85);
+  border-color: rgb(var(--cc-border-subtle) / 0.95);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .status-pill {
-  font-size: 0.75rem;
-  font-weight: 500;
-  padding: 0.25rem 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.28rem 0.65rem;
   border-radius: 9999px;
 }
 
-/* Animations */
+/* Upload drop zone (dark) */
+.dash-dropzone {
+  border-width: 1px;
+  border-style: dashed;
+  border-color: rgb(var(--cc-border-subtle) / 0.75);
+  background: linear-gradient(165deg, rgb(var(--cc-bg-base) / 0.5), rgb(var(--cc-bg-raised) / 0.35));
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.dash-dropzone:hover {
+  border-color: rgb(var(--cc-accent) / 0.45);
+  box-shadow: 0 0 0 1px rgb(var(--cc-accent) / 0.12);
+}
+
+.dash-dropzone-active {
+  border-color: rgb(var(--cc-accent) / 0.65);
+  background: rgb(8 47 73 / 0.35);
+  box-shadow: 0 0 0 2px rgb(var(--cc-accent) / 0.15);
+}
+
+/* Tables */
+.table-ops thead {
+  background: rgb(var(--cc-bg-base) / 0.95);
+}
+
+.table-ops th {
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--cc-text-muted));
+}
+
+.table-ops tbody tr {
+  border-bottom: 1px solid rgb(var(--cc-border) / 0.35);
+}
+
+.table-ops tbody tr:hover {
+  background-color: rgb(var(--cc-bg-raised) / 0.55);
+}
+
+/* Coastal embed — ties panel to shell */
+.cc-coastal-frame {
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-panel);
+  border: 1px solid rgb(var(--cc-border) / 0.4);
+  overflow: hidden;
+}
+
 @keyframes pulse-slow {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.78;
+  }
 }
 
 .animate-pulse-slow {
-  animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: pulse-slow 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .animate-fade-in {
-  animation: fade-in 0.2s ease-out;
+  animation: fade-in 0.4s ease-out;
+}
+
+@keyframes cc-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.cc-enter {
+  animation: cc-enter 0.45s ease-out both;
 }

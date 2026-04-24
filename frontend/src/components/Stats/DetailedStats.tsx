@@ -1,7 +1,5 @@
 /**
- * Detailed Statistics Component
- * ==============================
- * Clean, scannable stats for lifeguard dashboard
+ * Situation overview — KPI strip (dense, readable).
  */
 
 import type { Swimmer } from '../../types/swimmer'
@@ -19,19 +17,23 @@ function StatCard({
   value: string | number
   label: string
   sublabel?: string
-  accent?: 'blue' | 'emerald' | 'slate' | 'amber'
+  accent?: 'cyan' | 'emerald' | 'slate' | 'amber'
 }) {
-  const accentBorder = {
-    blue: 'border-l-blue-500',
-    emerald: 'border-l-emerald-500',
-    slate: 'border-l-slate-400',
-    amber: 'border-l-amber-500',
+  const bar = {
+    cyan: 'from-cyan-400 to-sky-600',
+    emerald: 'from-emerald-400 to-teal-600',
+    slate: 'from-slate-400 to-slate-600',
+    amber: 'from-amber-400 to-orange-500',
   }[accent]
   return (
-    <div className={`card border-l-4 p-5 tabular-nums ${accentBorder} animate-fade-in`}>
-      <div className="text-2xl font-bold text-slate-900">{value}</div>
-      <div className="mt-0.5 text-sm font-medium text-slate-600">{label}</div>
-      {sublabel && <div className="mt-1 text-xs text-slate-400">{sublabel}</div>}
+    <div
+      className="card card-elevated relative overflow-hidden p-5 sm:p-6 cc-enter"
+      style={{ borderRadius: 'var(--radius-card)' }}
+    >
+      <div className={`absolute left-0 right-0 top-0 h-0.5 bg-gradient-to-r ${bar}`} aria-hidden />
+      <div className="pt-1 text-3xl font-bold tabular-nums tracking-tight text-slate-50 sm:text-4xl">{value}</div>
+      <div className="mt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</div>
+      {sublabel ? <div className="mt-1 text-xs text-slate-500">{sublabel}</div> : null}
     </div>
   )
 }
@@ -56,31 +58,16 @@ export default function DetailedStats({ swimmers }: DetailedStatsProps) {
   }
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <StatCard
-        value={totalSwimmers}
-        label="Active Swimmers"
-        sublabel="Currently tracked"
-        accent="blue"
-      />
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 lg:gap-5">
+      <StatCard value={totalSwimmers} label="Active tracks" sublabel="Current feed" accent="cyan" />
       <StatCard
         value={`${(avgConfidence * 100).toFixed(1)}%`}
-        label="Avg Confidence"
-        sublabel="Detection accuracy"
+        label="Mean confidence"
+        sublabel="Across detections"
         accent="emerald"
       />
-      <StatCard
-        value={formatTime(avgTimeInView)}
-        label="Avg Time in View"
-        sublabel="Per swimmer"
-        accent="slate"
-      />
-      <StatCard
-        value={formatTime(totalTimeInView)}
-        label="Total Tracked Time"
-        sublabel="Combined"
-        accent="amber"
-      />
+      <StatCard value={formatTime(avgTimeInView)} label="Avg. time in view" sublabel="Per track" accent="slate" />
+      <StatCard value={formatTime(totalTimeInView)} label="Cumulative time" sublabel="All tracks" accent="amber" />
     </div>
   )
 }

@@ -12,7 +12,7 @@ Why Pydantic Settings?
 """
 
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Optional
 
 
 class Settings(BaseSettings):
@@ -64,20 +64,38 @@ class Settings(BaseSettings):
     # -------------------- AI Pipeline Configuration --------------------
     # Expected frame rate from AI pipeline
     EXPECTED_FPS: int = 10
+
+    # Optional: used only when running the Roboflow-based detector modes.
+    # Keeping this here prevents startup failure if ROBOFLOW_API_KEY exists in .env.
+    ROBOFLOW_API_KEY: Optional[str] = None
     
     # -------------------- System Mode Configuration --------------------
     # Mode: "playback" (uploaded videos) or "live" (real-time camera feeds)
     SYSTEM_MODE: str = "playback"
+
+    # -------------------- Default beach / coastal context (Open-Meteo) --------------------
+    # Used by /api/coastal/conditions when lat/lon not passed. Bondi Beach, NSW.
+    BEACH_DEFAULT_LAT: float = -33.890842
+    BEACH_DEFAULT_LON: float = 151.274291
+    BEACH_DEFAULT_LABEL: str = "Bondi Beach, NSW"
     
     # -------------------- Server Configuration --------------------
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     DEBUG: bool = True
+
+    # Where the AI subprocess POSTs FrameResult ingest (same machine: defaults to this server’s PORT).
+    # Override when the API is behind a proxy or reachable only at a public URL.
+    BACKEND_URL: Optional[str] = None
+
+    # Video upload cap (bytes). Enforced in /api/video/upload while streaming the body.
+    MAX_UPLOAD_VIDEO_BYTES: int = 50 * 1024 * 1024  # 50 MB default
     
     class Config:
         """Pydantic configuration"""
         env_file = ".env"  # Load from .env file if it exists
         case_sensitive = False  # Environment variables are case-insensitive
+        extra = "ignore"  # Ignore unrelated env vars instead of failing startup
 
 
 # Global settings instance

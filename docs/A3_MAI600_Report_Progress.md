@@ -47,7 +47,7 @@ Beach Assistant is a **real-world computer vision application** for lifeguard de
 
 | Component | Status | Description |
 |-----------|--------|-------------|
-| **YOLOv8 object detection** | ✅ Done | Person detection via Ultralytics YOLOv8 (`yolov8s.pt`, configurable). Supports yolov8n/s/m/l/x |
+| **YOLOv8 object detection** | ✅ Done | Person detection via Ultralytics YOLOv8. Default: fine-tuned `best.pt` (Roboflow drowning dataset) when present; else `yolov8s.pt`. Supports custom 7-class model (Drowning/Swimming/Out of Water/person). |
 | **YOLOv8-Pose** | ✅ Done | Pose estimation for drowning-related behaviour (`yolov8n-pose.pt`) |
 | **Multi-object tracking** | ✅ Done | ByteTrack-style tracking via Norfair; persistent track IDs |
 | **Scene analysis** | ✅ Done | Shore line and horizon detection (`scene_analyzer.py`); water zones |
@@ -66,9 +66,8 @@ Beach Assistant is a **real-world computer vision application** for lifeguard de
 - [ ] **Explicit architecture justification**
   - Why YOLOv8 vs other detectors (e.g. Faster R-CNN, DETR)
   - Why ByteTrack for tracking
-- [ ] **Custom training / fine-tuning**
-  - Fine-tune YOLOv8 on swimmer/beach data (or at least one small experiment)
-  - Or add a custom head/module and train it
+- [x] **Custom training / fine-tuning** ✅ Done
+  - Fine-tuned YOLOv8n on Roboflow drowning dataset (5 epochs); weights in `ai/runs/detect/runs-mai600/roboflow_v2_yolov8n_e5/weights/best.pt`. Pipeline now uses this model by default when present.
 - [ ] **Diagram**
   - High-level model architecture (detector → tracker → risk/alert)
 
@@ -83,12 +82,12 @@ Beach Assistant is a **real-world computer vision application** for lifeguard de
 | **Inference pipeline** | ✅ Done | Full inference flow: video → detection → tracking → risk → ingest |
 | **Configuration** | ✅ Done | Confidence threshold, IOU, frame skip, multi-scale detection via env vars |
 | **Tracking log** | ✅ Done | Per-frame tracking data logged to `tracking_log.csv` |
-| **Real-time metrics** | ⚠️ Partial | FPS, latency, detection counts in logs. Not standard ML metrics |
+| **Real-time metrics** | ⚠️ Partial | FPS, latency, detection counts in logs. Standard ML metrics from training run (below). |
+| **Fine-tuned training run** | ✅ Done | 5-epoch run on Roboflow dataset; mAP50 ≈ 61%, mAP50-95 ≈ 32%; results in `ai/runs/detect/runs-mai600/roboflow_v2_yolov8n_e5/`. |
 
 ### 3.2 What Needs to Be Done
 
-- [ ] **Custom training**
-  - Fine-tune YOLOv8 on labelled swimmer/beach data
+- [x] **Custom training** ✅ Done – YOLOv8n fine-tuned on Roboflow; pipeline wired to use `best.pt` by default.
 - [ ] **Formal evaluation**
   - Detection: mAP, precision, recall, F1
   - Tracking: MOT metrics if applicable

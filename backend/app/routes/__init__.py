@@ -10,6 +10,7 @@ from app.routes.websocket import router as websocket_router
 from app.routes.alerts import router as alerts_router
 from app.routes.cameras import router as cameras_router
 from app.routes.video import router as video_router
+from app.routes.coastal import router as coastal_router
 
 __all__ = [
     "swimmers_router",
@@ -18,4 +19,5 @@ __all__ = [
     "alerts_router",
     "cameras_router",
     "video_router",
+    "coastal_router",
 ]

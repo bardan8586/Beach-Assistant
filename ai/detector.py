@@ -45,18 +45,34 @@ class Detector:
                 self._init_pose_model(device)
     
     def _init_yolo(self, model_name: str, device: Optional[str]):
-        """Initialize YOLOv8 model."""
+        """Initialize YOLOv8 model. Accepts standard names (yolov8s.pt) or path to fine-tuned weights."""
         from ultralytics import YOLO
         import torch
-        
+        from pathlib import Path
+
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
-        
         self.device = device
-        print(f"Loading YOLOv8 model: {model_name} on {device}")
-        self.model = YOLO(model_name)
+
+        # Resolve path: if it looks like a path and is relative, resolve from ai/ directory
+        model_path = model_name
+        if not model_name.startswith("yolov8") and not Path(model_name).is_absolute():
+            ai_dir = Path(__file__).resolve().parent
+            candidate = (ai_dir / model_name).resolve()
+            if candidate.exists():
+                model_path = str(candidate)
+        elif Path(model_name).exists():
+            model_path = str(Path(model_name).resolve())
+
+        print(f"Loading YOLOv8 model: {model_path} on {device}")
+        self.model = YOLO(model_path)
         self.model.to(device)
-        print(f"✅ YOLOv8 model loaded successfully")
+        # Detect custom (fine-tuned) model: not 80-class COCO
+        self._is_custom_model = getattr(self.model.model, "nc", 80) != 80
+        if self._is_custom_model:
+            print(f"✅ Fine-tuned model loaded (nc={getattr(self.model.model, 'nc', '?')}) – using all classes for detection")
+        else:
+            print(f"✅ YOLOv8 model loaded successfully")
     
     def _init_pose_model(self, device: Optional[str]):
         """Initialize YOLOv8-Pose model for body keypoint detection."""
@@ -104,7 +120,8 @@ class Detector:
             min_size: Minimum bounding box size (optional, for filtering small detections)
         
         Returns:
-            List of (x1, y1, x2, y2, conf) tuples for each detected person
+            List of (x1, y1, x2, y2, conf) or (x1, y1, x2, y2, conf, class_name) for each detected person.
+            Fine-tuned models return 6-tuples with class name (e.g. Drowning, Swimming, person).
         """
         if self.model_type == "roboflow":
             detections = self._detect_roboflow(frame, conf_thres)
@@ -113,9 +130,12 @@ class Detector:
         
         # Filter by minimum size if specified (for far objects, use lower threshold)
         if min_size is not None:
-            detections = [(x1, y1, x2, y2, conf) for x1, y1, x2, y2, conf in detections
-                         if (x2 - x1) >= min_size and (y2 - y1) >= min_size]
-        
+            out = []
+            for det in detections:
+                x1, y1, x2, y2, conf = det[0], det[1], det[2], det[3], det[4]
+                if (x2 - x1) >= min_size and (y2 - y1) >= min_size:
+                    out.append(det if len(det) == 6 else (x1, y1, x2, y2, conf, "person"))
+            detections = out
         return detections
     
     def detect_poses(self, frame, conf_thres: float = 0.5) -> dict:
@@ -159,38 +179,40 @@ class Detector:
     
     def _detect_yolo(self, frame, conf_thres: float, iou_thres: float, 
                     imgsz: Optional[int] = None) -> List[Tuple[int, int, int, int, float]]:
-        """Run YOLOv8 detection."""
+        """Run YOLOv8 detection. For COCO models uses class 0 (person); for fine-tuned models uses all classes."""
         try:
-            # Use default image size (faster) - YOLOv8 handles scaling internally
-            # Only use larger size if explicitly requested
             if imgsz is None:
-                imgsz = 640  # Default YOLOv8 size for speed
-            
-            results = self.model(
-                frame,
+                imgsz = 640
+            kwargs = dict(
                 conf=conf_thres,
                 iou=iou_thres,
-                classes=[0],  # COCO class index for 'person'
                 verbose=False,
                 device=self.model.device,
-                imgsz=imgsz
+                imgsz=imgsz,
             )
-            
+            if getattr(self, "_is_custom_model", False):
+                # Fine-tuned model (e.g. Roboflow drowning): all classes are person-related
+                pass
+            else:
+                kwargs["classes"] = [0]  # COCO person only
+            results = self.model(frame, **kwargs)
             result = results[0]
+            names = getattr(self.model.model, "names", {0: "person"})
             detections = []
-            
-            for box, conf, cls in zip(result.boxes.xyxy.cpu().numpy(),
-                                      result.boxes.conf.cpu().numpy(),
-                                      result.boxes.cls.cpu().numpy()):
-                if int(cls) != 0:
+            for box, conf, cls in zip(
+                result.boxes.xyxy.cpu().numpy(),
+                result.boxes.conf.cpu().numpy(),
+                result.boxes.cls.cpu().numpy(),
+            ):
+                if not getattr(self, "_is_custom_model", False) and int(cls) != 0:
                     continue
                 x1, y1, x2, y2 = map(int, box)
-                detections.append((x1, y1, x2, y2, float(conf)))
-            
+                class_name = names.get(int(cls), "person")
+                detections.append((x1, y1, x2, y2, float(conf), class_name))
             return detections
         except Exception as e:
             print(f"⚠️  Detection error: {e}")
-            return []  # Return empty list on error instead of crashing
+            return []
     
     def _detect_roboflow(self, frame, conf_thres: float) -> List[Tuple[int, int, int, int, float]]:
         """Run Roboflow Inference API detection."""

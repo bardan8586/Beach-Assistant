@@ -47,6 +47,37 @@ venv.bak/
 tests/models/*.pt
 tests/models/*.pth
 
+# -------------------- Datasets (LARGE FILES) --------------------
+# Roboflow / training datasets (do not commit)
+ai/datasets/
+
+# -------------------- Training Runs (selectively keep figures) --------------------
+# Ignore all runs by default
+ai/runs/
+!ai/runs/
+ai/runs/*
+
+# Keep the specific MAI600 run folder figures used in docs/report.md
+!ai/runs/detect/
+ai/runs/detect/*
+
+!ai/runs/detect/runs-mai600/
+ai/runs/detect/runs-mai600/*
+
+!ai/runs/detect/runs-mai600/roboflow_v2_yolov8n_e5/
+ai/runs/detect/runs-mai600/roboflow_v2_yolov8n_e5/*
+
+!ai/runs/detect/runs-mai600/roboflow_v2_yolov8n_e5/*.png
+!ai/runs/detect/runs-mai600/roboflow_v2_yolov8n_e5/*.jpg
+!ai/runs/detect/runs-mai600/roboflow_v2_yolov8n_e5/args.yaml
+
+# Never commit weights
+ai/runs/detect/runs-mai600/roboflow_v2_yolov8n_e5/weights/
+
+# Keep the repo small: only commit the specific run figures we reference
+ai/runs/detect/runs-mai600/roboflow_v2_yolov8n_e5/train_batch1.jpg
+ai/runs/detect/runs-mai600/roboflow_v2_yolov8n_e5/train_batch2.jpg
+
 # -------------------- Test Data (LARGE FILES) --------------------
 # Video files
 tests/data/*.mp4
@@ -188,6 +219,7 @@ temp/
 *.tmp
 *.bak
 *.backup
+ai/Untitled
 
 # -------------------- System Files --------------------
 # Thumbnails

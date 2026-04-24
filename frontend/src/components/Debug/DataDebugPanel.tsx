@@ -1,7 +1,5 @@
 /**
- * Data Debug Panel
- * ================
- * Show all incoming data for debugging
+ * Developer diagnostics — tucked away, same visual language as the app.
  */
 
 import { useState } from 'react'
@@ -19,68 +17,55 @@ export default function DataDebugPanel({ swimmers, isConnected, selectedCamera }
   if (!isOpen) {
     return (
       <button
+        type="button"
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded-lg shadow-lg text-sm hover:bg-gray-700 z-50"
+        className="fixed bottom-5 right-5 z-50 rounded-full border border-slate-600/90 bg-slate-900/90 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-300 shadow-lg backdrop-blur-sm transition hover:border-slate-500 hover:text-white"
       >
-        🔍 Debug Data
+        Debug
       </button>
     )
   }
 
   return (
-    <div className="fixed bottom-4 right-4 bg-white rounded-lg shadow-2xl border-2 border-gray-300 w-96 max-h-96 z-50">
-      <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
-        <h3 className="font-bold text-gray-900">🔍 Debug Panel</h3>
+    <div className="fixed bottom-5 right-5 z-50 flex w-[min(100vw-2rem,22rem)] flex-col overflow-hidden rounded-2xl border border-slate-700/90 bg-slate-950/95 shadow-2xl backdrop-blur-md">
+      <div className="flex items-center justify-between border-b border-slate-700/80 bg-slate-900/90 px-4 py-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Debug</h3>
         <button
+          type="button"
           onClick={() => setIsOpen(false)}
-          className="text-gray-500 hover:text-gray-700"
+          className="rounded-lg px-2 py-1 text-xs font-semibold text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
         >
-          ✕
+          Close
         </button>
       </div>
-      <div className="p-4 overflow-y-auto max-h-80">
-        <div className="space-y-4 text-xs">
-          <div>
-            <div className="font-semibold text-gray-700 mb-1">Connection Status:</div>
-            <div className={isConnected ? 'text-green-600' : 'text-red-600'}>
-              {isConnected ? '✅ WebSocket Connected' : '❌ WebSocket Disconnected'}
-            </div>
+      <div className="max-h-80 space-y-4 overflow-y-auto p-4 text-xs text-slate-300">
+        <div>
+          <div className="mb-1 font-semibold text-slate-500">WebSocket</div>
+          <div className={isConnected ? 'font-medium text-emerald-400' : 'font-medium text-red-400'}>
+            {isConnected ? 'Connected' : 'Disconnected'}
           </div>
-          
-          <div>
-            <div className="font-semibold text-gray-700 mb-1">Swimmers Count:</div>
-            <div className="text-gray-900">{swimmers.length}</div>
-          </div>
-
-          {swimmers.length > 0 && (
-            <div>
-              <div className="font-semibold text-gray-700 mb-2">Swimmer Data:</div>
-              <pre className="bg-gray-100 p-2 rounded text-xs overflow-x-auto">
-                {JSON.stringify(swimmers.slice(0, 3), null, 2)}
-                {swimmers.length > 3 && '\n... and ' + (swimmers.length - 3) + ' more'}
-              </pre>
-            </div>
-          )}
-
-          {swimmers.length === 0 && (
-            <div className="text-yellow-600">
-              ⚠️ No swimmer data received yet. Check:
-              <ul className="list-disc list-inside mt-2 space-y-1 text-xs">
-                <li>Is AI pipeline running? (check backend logs)</li>
-                <li>Is backend receiving data? (check /api/data/ingest)</li>
-                <li>Is WebSocket connected? (check connection status)</li>
-                <li>Is camera_id matching? (check console logs)</li>
-                <li>Check browser console for errors</li>
-              </ul>
-              <div className="mt-2 text-xs">
-                <p>Current camera: {selectedCamera || 'none'}</p>
-                <p>WebSocket: {isConnected ? '✅ Connected' : '❌ Disconnected'}</p>
-              </div>
-            </div>
-          )}
         </div>
+
+        <div>
+          <div className="mb-1 font-semibold text-slate-500">Camera</div>
+          <div className="break-all font-mono text-[11px] text-slate-200">{selectedCamera ?? '—'}</div>
+        </div>
+
+        <div>
+          <div className="mb-1 font-semibold text-slate-500">Swimmers</div>
+          <div className="font-mono text-sm font-semibold text-slate-100">{swimmers.length}</div>
+        </div>
+
+        {swimmers.length > 0 && (
+          <div>
+            <div className="mb-2 font-semibold text-slate-500">Sample payload</div>
+            <pre className="max-h-40 overflow-auto rounded-lg border border-slate-700/80 bg-slate-900/80 p-2 font-mono text-[10px] leading-relaxed text-slate-300">
+              {JSON.stringify(swimmers.slice(0, 2), null, 2)}
+              {swimmers.length > 2 && `\n… +${swimmers.length - 2} more`}
+            </pre>
+          </div>
+        )}
       </div>
     </div>
   )
 }
-

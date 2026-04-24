@@ -17,6 +17,7 @@ import cv2
 import json
 from typing import Optional
 from app.utils import results_storage
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,16 @@ print(json.dumps(out))
     return data
 
 
+@router.get("/limits")
+async def upload_limits():
+    """Max video upload size (frontend should match for UX before upload)."""
+    mb = max(1, settings.MAX_UPLOAD_VIDEO_BYTES // (1024 * 1024))
+    return {
+        "max_upload_bytes": settings.MAX_UPLOAD_VIDEO_BYTES,
+        "max_upload_mb": mb,
+    }
+
+
 @router.get("/preflight")
 async def ai_preflight():
     """Return AI environment health (imports + versions) for the configured AI python."""
@@ -92,20 +103,63 @@ async def upload_video(file: UploadFile = File(...)):
     try:
         # Generate unique video ID
         video_id = str(uuid.uuid4())
-        
+
+        max_bytes = settings.MAX_UPLOAD_VIDEO_BYTES
+        cl = file.headers.get("content-length")
+        if cl:
+            try:
+                if int(cl) > max_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail={
+                            "error": "file_too_large",
+                            "max_bytes": max_bytes,
+                            "max_mb": max(1, max_bytes // (1024 * 1024)),
+                        },
+                    )
+            except ValueError:
+                pass
+
         # Create video directory structure (Task 1.2)
         video_dir = results_storage.create_video_directory(video_id)
-        
+
         # Save video file in the video directory
         file_extension = Path(file.filename).suffix or ".mp4"
         video_filename = f"video{file_extension}"
         video_path = video_dir / video_filename
-        
-        # Save uploaded file
+
+        chunk_size = 1024 * 1024
+        written = 0
         with open(video_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > max_bytes:
+                    try:
+                        buffer.close()
+                    except Exception:
+                        pass
+                    try:
+                        video_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                    raise HTTPException(
+                        status_code=413,
+                        detail={
+                            "error": "file_too_large",
+                            "max_bytes": max_bytes,
+                            "max_mb": max(1, max_bytes // (1024 * 1024)),
+                        },
+                    )
+                buffer.write(chunk)
         
         # Extract video metadata
+        width = height = 0
+        fps = 0.0
+        frame_count = 0
+        duration = 0.0
         try:
             cap = cv2.VideoCapture(str(video_path))
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -140,6 +194,8 @@ async def upload_video(file: UploadFile = File(...)):
             "duration": duration
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error uploading video: {e}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
@@ -171,15 +227,18 @@ async def process_video(video_id: str, camera_id: Optional[str] = None, show_win
         if not camera_id:
             camera_id = f"upload_{video_id[:8]}"
         
-        # Check if already processing
+        # Only block if this video has an *active* subprocess; allow re-runs after completion
         if video_id in processing_jobs:
-            return {
-                "success": True,
-                "message": "Video is already being processed",
-                "video_id": video_id,
-                "camera_id": camera_id,
-                "status": "processing"
-            }
+            existing = processing_jobs[video_id].get("process")
+            if existing is not None and existing.poll() is None:
+                return {
+                    "success": True,
+                    "message": "Video is already being processed",
+                    "video_id": video_id,
+                    "camera_id": camera_id,
+                    "status": "processing",
+                }
+            del processing_jobs[video_id]
         
         # Start AI pipeline in background
         # Get the project root (4 levels up from backend/app/routes/video.py)
@@ -194,7 +253,12 @@ async def process_video(video_id: str, camera_id: Optional[str] = None, show_win
         
         # Set environment variables for AI pipeline
         env = os.environ.copy()
-        env["BACKEND_URL"] = os.getenv("BACKEND_URL", "http://localhost:8000")
+        # Ingest must hit THIS API instance (same port as uvicorn). Default localhost:8000 breaks when PORT≠8000
+        # or when another service (e.g. Docker/nginx) occupies 8000.
+        ingest_base = (env.get("BACKEND_URL") or "").strip() or (settings.BACKEND_URL or "").strip()
+        if not ingest_base:
+            ingest_base = f"http://127.0.0.1:{settings.PORT}"
+        env["BACKEND_URL"] = ingest_base
         env["CAMERA_ID"] = camera_id
         env["VIDEO_ID"] = video_id  # So ingest stores under this video_id for playback
         env["SEND_TO_BACKEND"] = "true"

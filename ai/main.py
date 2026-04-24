@@ -85,11 +85,10 @@ BACKEND_SEND_INTERVAL = 1  # Send to backend every frame for real-time updates
 SHOW_WINDOW = os.getenv("SHOW_WINDOW", "false").lower() == "true"  # Disable OpenCV window for web mode
 
 # --- Initialize modules ---
-# Support both YOLO and Roboflow via environment variables
-DETECTOR_TYPE = os.getenv("DETECTOR_TYPE", "yolo").lower()  # "yolo" or "roboflow"
-MODEL_NAME = os.getenv("MODEL_NAME", "yolov8s.pt")  # Better default: small instead of nano
-
+# Use config so we default to fine-tuned best.pt when it exists (assessment / production)
+from config import DETECTOR_TYPE, MODEL_NAME
 print(f"Initializing detector: {DETECTOR_TYPE}...")
+print(f"Model: {MODEL_NAME}")
 # Enable pose estimation for drowning detection
 ENABLE_POSE = os.getenv("ENABLE_POSE", "true").lower() == "true"
 
@@ -256,12 +255,11 @@ try:
                 # Improved deduplication using IoU (Intersection over Union)
                 filtered_detections = []
                 for det in all_detections:
-                    x1, y1, x2, y2, conf = det
+                    x1, y1, x2, y2, conf = det[0], det[1], det[2], det[3], det[4]
                     is_duplicate = False
                     box_area = (x2 - x1) * (y2 - y1)
-                    
                     for existing in filtered_detections:
-                        ex1, ey1, ex2, ey2, econf = existing
+                        ex1, ey1, ex2, ey2, econf = existing[0], existing[1], existing[2], existing[3], existing[4]
                         # Calculate IoU
                         intersection_x = max(0, min(x2, ex2) - max(x1, ex1))
                         intersection_y = max(0, min(y2, ey2) - max(y1, ey1))
@@ -689,11 +687,12 @@ try:
                 cv2.putText(frame, action_text, (x1, y2 + 25), 
                            cv2.FONT_HERSHEY_SIMPLEX, action_scale, action_color, 2)
             
-            # 📝 LABEL: ID + State + Risk Level
+            # 📝 LABEL: Class (from model) + ID + State + Risk Level
+            class_name = getattr(person, "class_name", "person")
             if risk_score:
-                label = f"#{person.track_id} {swimmer_state.value.upper()} {risk_score.level.value.upper()}"
+                label = f"{class_name} #{person.track_id} {swimmer_state.value.upper()} {risk_score.level.value.upper()}"
             else:
-                label = f"#{person.track_id} {swimmer_state.value.upper()}"
+                label = f"{class_name} #{person.track_id} {swimmer_state.value.upper()}"
             
             # ⏱️ Add FATIGUE indicator if detected
             if fatigue_metrics and fatigue_metrics.speed_trend < -0.3:
