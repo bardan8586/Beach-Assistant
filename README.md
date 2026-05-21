@@ -23,6 +23,8 @@ A comprehensive AI-powered beach safety monitoring system that detects, tracks, 
 
 ## 🏗️ Architecture
 
+**Software architecture (current + target, Mermaid diagrams):** see [`docs/architecture/`](docs/architecture/README.md).
+
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
 │   Frontend  │────▶│   Backend    │────▶│  MongoDB    │
