@@ -1,6 +1,6 @@
 # Beach Assistant — AI-assisted beach safety monitoring (prototype)
 
-A practical engineering prototype that connects computer-vision inference, multi-object tracking and a FastAPI backend to a React monitoring interface. The repository contains an AI pipeline (YOLO-based detection and tracking), a FastAPI backend that ingests and serves detections and alerts, and a React frontend dashboard that subscribes to real‑time updates over WebSocket.
+A practical engineering prototype that connects computer-vision inference, multi-object tracking and a FastAPI backend to a React monitoring interface. The repository contains an AI pipeline (YOLO-[...]
 
 This README is written as an engineering project overview — what is implemented, how the pieces fit together, how to run the system locally, and what remains experimental.
 
@@ -8,7 +8,7 @@ This README is written as an engineering project overview — what is implemente
 
 ## Project overview
 
-Beach Assistant demonstrates an end‑to‑end prototype pipeline for monitoring beach camera video and extracting swim‑related signals: person detection, multi‑object tracking, simple trajectory/behavior analysis and alert generation. The repository is structured into three main components:
+Beach Assistant demonstrates an end‑to‑end prototype pipeline for monitoring beach camera video and extracting swim‑related signals: person detection, multi‑object tracking, simple traject[...]
 
 - `ai/` — inference and tracking code (YOLO detectors, tracker modules, analysis helpers)
 - `backend/` — FastAPI service that orchestrates streams, stores data and broadcasts real‑time messages via WebSockets
@@ -20,9 +20,9 @@ The project is a research/prototype engineering effort intended for evaluation a
 
 ## Problem being explored
 
-How to turn raw camera/video input into actionable, real‑time signals for an operator console: detect people, maintain persistent identities across frames, analyze short‑term trajectories and behaviors that may indicate risk (e.g., stationary swimmers, rapid movement away from shore), and surface alerts and analytics in a dashboard.
+How to turn raw camera/video input into actionable, real‑time signals for an operator console: detect people, maintain persistent identities across frames, analyze short‑term trajectories and [...]
 
-Key tradeoffs explored in the codebase include frame rate vs inference cost, filtering false positives near the shore, and designing a practical backend → frontend real‑time data flow that is testable locally.
+Key tradeoffs explored in the codebase include frame rate vs inference cost, filtering false positives near the shore, and designing a practical backend → frontend real‑time data flow that is [...]
 
 ---
 
@@ -41,24 +41,24 @@ Key tradeoffs explored in the codebase include frame rate vs inference cost, fil
 ```mermaid
 flowchart TD
   subgraph Frontend
-    F[React Dashboard]
+    F["React Dashboard"]
   end
   subgraph Backend
-    B[FastAPI] --> DB[(MongoDB / SQLite)]
+    B["FastAPI"] --> DB[(MongoDB / SQLite)]
     B --> WS{WebSocket}
   end
   subgraph AI
-    A[AI Worker (YOLO + Tracker)]
+    A["AI Worker (YOLO + Tracker)"]
   end
 
-  Camera[RTSP / Video File] --> Backend
+  Camera["RTSP / Video File"] --> Backend
   Backend -->|enqueue frames| A
   A -->|detections & tracks| Backend
   Backend -->|broadcast| F
   Backend -->|persist| DB
 ```
 
-This repository supports local single‑host execution (all services on one machine) or split services (AI worker separate from backend). See the `docker-compose.yml` and individual `backend/` and `frontend/` Dockerfiles for containerisation notes.
+This repository supports local single‑host execution (all services on one machine) or split services (AI worker separate from backend). See the `docker-compose.yml` and individual `backend/` and[...]
 
 ---
 
@@ -176,7 +176,7 @@ python main.py path/to/test_video.mp4
 # or use SHOW_WINDOW=true for local preview
 ```
 
-The repository includes `test_playback_api.py` and `tests/` helper data for local end‑to-end experiments (see `test_playback_api.py` for a scripted playback/ingest test).
+The repository includes `test_playback_api.py` and `tests/` helper data for local end‑to‑end experiments (see `test_playback_api.py` for a scripted playback/ingest test).
 
 ---
 
@@ -190,7 +190,7 @@ Backend exposes REST and WebSocket interfaces (see `backend/README.md` for full 
 - GET `/api/alerts` — recent alerts  
 - WS `/ws/feed?camera_id=...` — subscribe to real‑time feed (detections, tracks, alerts)
 
-Messages on the WebSocket are JSON objects carrying detection arrays, track updates and alert objects. Check `backend/app/api/websocket.py` and `frontend/src/hooks/useWebSocket.ts` (or similar) for exact message shapes.
+Messages on the WebSocket are JSON objects carrying detection arrays, track updates and alert objects. Check `backend/app/api/websocket.py` and `frontend/src/hooks/useWebSocket.ts` (or similar) f[...]
 
 ---
 
@@ -199,7 +199,7 @@ Messages on the WebSocket are JSON objects carrying detection arrays, track upda
 - Detector: Ultralytics YOLOv8 (model files referenced in `ai/models` or configured via `MODEL_NAME`). The code supports using a local YOLO model or a Roboflow integration when configured.
 - Tracker: ByteTrack‑style tracker implemented in `ai/tracking` (byte_tracker / kalman smoothing) to assign persistent IDs across frames.
 - Filtering & scene analysis: Modules exist for shore/horizon detection and filtering candidates by size/position to reduce false positives near the beach boundary.
-- Analysis: `behavior_analyzer` and `risk_engine` (or `risk_engine.py` in some paths) calculate basic heuristics such as stationary time, zone violations and a composite risk score used by the `alert_manager`.
+- Analysis: `behavior_analyzer` and `risk_engine` (or `risk_engine.py` in some paths) calculate basic heuristics such as stationary time, zone violations and a composite risk score used by the `a[...]
 
 Implementation notes
 - The codebase provides configuration variables to tune thresholds (confidence, IOU, min size ratios) and to switch detector types. See `.env.example` for environment keys.  
@@ -209,11 +209,11 @@ Implementation notes
 
 ## Current status (accurate, evidence‑based)
 
-- Backend: implemented FastAPI service with REST endpoints and WebSocket handler (see `backend/`). Code and documentation exist. The repo's backend README lists available endpoints and local run instructions.  
+- Backend: implemented FastAPI service with REST endpoints and WebSocket handler (see `backend/`). Code and documentation exist. The repo's backend README lists available endpoints and local run [...]
 - AI pipeline: detection and tracking components are present under `ai/`. Model files and loaders are referenced and the repository includes scripts to run inference on local video.  
-- Frontend: React dashboard skeleton and many components exist under `frontend/`; the frontend README notes some components are still "In Progress" (video feed, WebSocket integration and some UI pieces).  
+- Frontend: React dashboard skeleton and many components exist under `frontend/`; the frontend README notes some components are still "In Progress" (video feed, WebSocket integration and some UI [...]
 
-Summary: the repository contains a functioning prototype stack intended for local testing and demonstration. It is not a turnkey production deployment out of the box — frontend integration and production hardening require additional work.
+Summary: the repository contains a functioning prototype stack intended for local testing and demonstration. It is not a turnkey production deployment out of the box — frontend integration and [...]
 
 ---
 
@@ -222,7 +222,7 @@ Summary: the repository contains a functioning prototype stack intended for loca
 - Not a production deployment: no managed cloud infrastructure or tested global deployment is included in this repo.  
 - Performance will vary by hardware and model selection. The default CPU inference path will be slower than GPU.  
 - Multi‑camera scaling is a design goal but requires deployment/operational work (worker scaling, queue infrastructure, monitoring) before production use.  
-- False positives/scene assumptions: shore detection and precise distance estimation from a single monocular camera have inherent limitations; results depend on camera angle, resolution and model accuracy.  
+- False positives/scene assumptions: shore detection and precise distance estimation from a single monocular camera have inherent limitations; results depend on camera angle, resolution and model[...]
 - Sensitive configuration: `.env.example` is safe; do not commit real credentials. I inspected `.env.example` and there are no secret keys committed. Keep credentials out of the repo.
 
 ---
@@ -231,7 +231,7 @@ Summary: the repository contains a functioning prototype stack intended for loca
 
 - Improve pose‑based signals and advanced drowning heuristics (research + labeled data required)  
 - GPU‑accelerated inference & batch processing for higher FPS  
-- End‑to‑end integration tests with sample RTSP streams and synthetic events  
+- End‑to-end integration tests with sample RTSP streams and synthetic events  
 - Authentication & RBAC for the dashboard  
 - Optional integrations: SMS/Email escalation, incident export, mobile responder app
 
@@ -261,7 +261,7 @@ Summary: the repository contains a functioning prototype stack intended for loca
 
 ## Contribution & license
 
-This repository is maintained as an open engineering prototype. Contributions that improve reliability, documentation, testability and safety are welcome. Please open issues for bugs or propose PRs focused on documentation and tests.  
+This repository is maintained as an open engineering prototype. Contributions that improve reliability, documentation, testability and safety are welcome. Please open issues for bugs or propose P[...]
 
 *License*: see repository root for any license file. If no explicit open source license file is present, treat this code as project work and request clarification for reuse.
 
