@@ -84,6 +84,7 @@ SEND_TO_BACKEND = os.getenv("SEND_TO_BACKEND", "true").lower() == "true"
 BACKEND_SEND_INTERVAL = 1  # Send to backend every frame for real-time updates
 SHOW_WINDOW = os.getenv("SHOW_WINDOW", "false").lower() == "true"  # Disable OpenCV window for web mode
 last_preview_sent = 0.0
+last_preview_sent = 0.0
 
 # --- Initialize modules ---
 # Use config so we default to fine-tuned best.pt when it exists (assessment / production)
@@ -827,6 +828,20 @@ try:
                     )
             except requests.RequestException:
                 pass  # Preview is best-effort; inference continues.
+
+        # Best-effort local dashboard preview; do not slow inference if unavailable.
+        if SEND_TO_BACKEND and time.monotonic() - last_preview_sent >= 0.5:
+            last_preview_sent = time.monotonic()
+            try:
+                h, w = frame_with_overlay.shape[:2]
+                preview = cv2.resize(frame_with_overlay, (min(960, w), max(1, round(h * min(960, w) / w))))
+                ok, jpeg = cv2.imencode(".jpg", preview, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+                if ok and len(jpeg) <= 400_000:
+                    requests.post(f"{BACKEND_URL}/api/preview/{CAMERA_ID}",
+                                  data=jpeg.tobytes(),
+                                  headers={"Content-Type": "image/jpeg"}, timeout=0.25)
+            except requests.RequestException:
+                pass
 
         # --- g. Display the frame (only if SHOW_WINDOW is enabled) ---
         if SHOW_WINDOW:
