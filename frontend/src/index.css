@@ -284,3 +284,36 @@ body {
 .cc-enter {
   animation: cc-enter 0.45s ease-out both;
 }
+
+
+/* Beach Assistant workspace refresh — visual hierarchy and legibility */
+:root {
+  --cc-bg-deep: 8 16 28;
+  --cc-bg-base: 14 27 42;
+  --cc-bg-raised: 21 38 56;
+  --cc-bg-panel: 26 46 64;
+  --cc-border: 54 76 94;
+  --cc-text-primary: 243 250 250;
+  --cc-accent: 54 211 189;
+  --radius-card: 1.125rem;
+  --radius-video: 1rem;
+}
+.app-bg {
+  background: radial-gradient(ellipse 80% 36% at 55% -14%, rgba(24,135,134,.19),transparent), #08101c;
+}
+.app-bg main {max-width: 1440px; margin-inline:auto; padding-top:1.25rem; padding-bottom:5rem}
+.app-bg section.card, .app-bg aside .card, .app-bg .card-elevated {
+  border:1px solid rgba(116,155,169,.19);
+  box-shadow: 0 12px 40px rgba(1,8,16,.2);
+}
+.app-bg .card-title {letter-spacing:.14em; color:#80d7cf}
+.app-bg .card-title-lg {letter-spacing:-.025em}
+.app-bg button {transition: background-color .18s ease, border-color .18s ease, transform .18s ease}
+.app-bg button:focus-visible {outline:2px solid #5eead4;outline-offset:3px}
+.app-bg button:active:not(:disabled) {transform:translateY(1px)}
+.app-bg .status-pill {letter-spacing:.035em}
+.app-bg video, .app-bg img[alt="Annotated live AI preview"] {background:#020812}
+.app-bg section[aria-label="Video analysis"] {border-color:rgba(64,189,177,.3)}
+.app-bg dl dt {font-weight:500}
+.app-bg dl dd {font-variant-numeric:tabular-nums}
+@media(max-width:640px){.app-bg main{padding-inline:14px}.app-bg section.card{padding:16px}}
