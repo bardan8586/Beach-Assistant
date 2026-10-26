@@ -15,6 +15,7 @@ import logging
 
 from app.config import settings
 from app.routes.preview import router as preview_router
+from app.routes.preview import router as preview_router
 from app.database import database
 from app.routes import swimmers_router, ingest_router, websocket_router, alerts_router, cameras_router, video_router, coastal_router
 from app.utils.logger import setup_logging
@@ -94,6 +95,7 @@ app.include_router(cameras_router, prefix=settings.API_PREFIX)
 app.include_router(video_router, prefix=settings.API_PREFIX)  # Video upload & processing
 app.include_router(coastal_router, prefix=settings.API_PREFIX)  # Live coastal / marine context (Open-Meteo)
 app.include_router(preview_router)  # local annotated JPEG preview
+app.include_router(preview_router)
 app.include_router(websocket_router)  # WebSocket doesn't use /api prefix
 
 
