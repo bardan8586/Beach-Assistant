@@ -64,10 +64,17 @@ export default function VideoPlayer({
     return { width: 1280, height: 720 }
   }, [frameResults])
 
-  // 🎯 FRAME SYNC: video time (timestamp_ms) or frame_index fallback so overlays match video
+  // During live inference, show the latest received AI result rather than waiting
+  // for the browser video element to play. A paused clip must not freeze live telemetry.
+  useEffect(() => {
+    if (!isLive || frameResults.length === 0) return
+    setCurrentFrameResult(frameResults[frameResults.length - 1])
+  }, [isLive, frameResults])
+
+  // During recorded playback, synchronize overlays to the video's actual position.
   useEffect(() => {
     const video = videoRef.current
-    if (!video || frameResults.length === 0) return
+    if (isLive || !video || frameResults.length === 0) return
 
     const syncFrameToVideoTime = () => {
       const currentTimeMs = video.currentTime * 1000
@@ -121,7 +128,7 @@ export default function VideoPlayer({
         cancelAnimationFrame(animationFrameRef.current)
       }
     }
-  }, [frameResults, currentFrameResult])
+  }, [frameResults, currentFrameResult, isLive])
 
   // 🎨 PIXEL-PERFECT RENDERING (Task 1.4)
   // Draws bounding boxes with exact coordinate mapping
