@@ -26,6 +26,7 @@ import { apiService } from './services/api'
 import { videoService } from './services/videoService'
 import { playbackService } from './services/playbackService'
 import { audioAlertService } from './services/audioAlertService'
+import { API_BASE_URL } from './utils/constants'
 import type { FrameResult, AlertData } from './types/frameResult'
 
 function App() {
@@ -38,6 +39,7 @@ function App() {
   const [uploadProgress, setUploadProgress] = useState(0)
   const [autoAnalyze, setAutoAnalyze] = useState(true)
   const [maxUploadBytes, setMaxUploadBytes] = useState<number | null>(null)
+  const [apiOnline, setApiOnline] = useState(false)
 
   // FrameResult data for playback mode
   const [frameResults, setFrameResults] = useState<FrameResult[]>([])
@@ -166,6 +168,20 @@ function App() {
       .getVideoUploadLimits()
       .then((lim) => setMaxUploadBytes(lim.max_upload_bytes))
       .catch(() => setMaxUploadBytes(50 * 1024 * 1024))
+  }, [])
+
+  // A real health request, never a hardcoded green status.
+  useEffect(() => {
+    let active = true
+    const check = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/health`, { signal: AbortSignal.timeout(4000) })
+        if (active) setApiOnline(response.ok)
+      } catch { if (active) setApiOnline(false) }
+    }
+    void check()
+    const timer = setInterval(check, 15000)
+    return () => { active = false; clearInterval(timer) }
   }, [])
 
   // Fetch initial data and refresh
@@ -395,25 +411,11 @@ function App() {
         onResetUpload={handleResetUpload}
       />
 
-      <main className="mx-auto max-w-[1680px] space-y-10 px-4 py-8 sm:px-8 sm:py-10">
-        <section aria-label="Coastal conditions">
-          <SectionHeader
-            kicker="Environment"
-            title="Marine & surface conditions"
-            description="Live Open-Meteo context for the default patrol coordinates. Use alongside video intelligence."
-          />
-          <CoastalConditionsPanel />
-        </section>
-
-        <section aria-label="Statistics">
-          <SectionHeader
-            kicker="Situation"
-            title="Tracking overview"
-            description="Aggregates from the current feed — updates as detections arrive."
-          />
-          <DetailedStats swimmers={swimmers} />
-        </section>
-
+      <main className="mx-auto max-w-[1680px] space-y-8 px-4 py-8 sm:px-8 sm:py-10">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div><p className="text-xs font-semibold uppercase tracking-[0.22em] text-teal-300">Beach safety · Operations</p><h1 className="mt-1 text-3xl font-semibold tracking-tight text-white">Monitoring workspace</h1><p className="mt-2 text-sm text-slate-400">Analyze beach video, inspect swimmers, and review alerts in one place.</p></div>
+          <div className={`rounded-xl border px-4 py-3 text-sm ${apiOnline ? 'border-teal-700/40 bg-teal-950/30 text-teal-200' : 'border-amber-700/40 bg-amber-950/30 text-amber-100'}`}>{apiOnline ? '● API connected' : '● API unavailable · Preview only'}</div>
+        </div>
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:gap-10">
           <div className="space-y-8 lg:col-span-8">
             <section className="card card-elevated cc-enter overflow-hidden p-6 sm:p-7" aria-label={uploadedVideo ? 'Video analysis' : 'Upload video'}>
@@ -696,7 +698,7 @@ function App() {
               <dl className="space-y-3.5 text-sm">
                 <div className="flex justify-between gap-3 border-b border-slate-700/50 pb-3">
                   <dt className="text-slate-400">Backend API</dt>
-                  <dd className="font-semibold text-emerald-400">Online</dd>
+                  <dd className={`font-semibold ${apiOnline ? 'text-emerald-400' : 'text-amber-400'}`}>{apiOnline ? 'Online' : 'Not connected'}</dd>
                 </div>
                 <div className="flex justify-between gap-3 border-b border-slate-700/50 pb-3">
                   <dt className="text-slate-400">WebSocket</dt>
@@ -739,6 +741,24 @@ function App() {
             </section>
           </aside>
         </div>
+        <section aria-label="Coastal conditions">
+          <SectionHeader
+            kicker="Environment"
+            title="Marine & surface conditions"
+            description="Live Open-Meteo context for the default patrol coordinates. Use alongside video intelligence."
+          />
+          <CoastalConditionsPanel />
+        </section>
+
+        <section aria-label="Statistics">
+          <SectionHeader
+            kicker="Situation"
+            title="Tracking overview"
+            description="Aggregates from the current feed — updates as detections arrive."
+          />
+          <DetailedStats swimmers={swimmers} />
+        </section>
+
       </main>
 
       {/* Debug Panel */}
