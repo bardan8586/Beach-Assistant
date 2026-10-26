@@ -54,9 +54,14 @@ export default function VideoPlayer({
   
   // Current frame result (timestamp-synced)
   const [currentFrameResult, setCurrentFrameResult] = useState<FrameResult | null>(null)
-  const previewUrl = isLive && cameraId
+  const [previewFailed, setPreviewFailed] = useState(false)
+  const previewUrl = isLive && cameraId && !previewFailed
     ? `${API_BASE_URL}/api/preview/${encodeURIComponent(cameraId)}.mjpg`
     : null
+
+  useEffect(() => {
+    setPreviewFailed(false)
+  }, [cameraId, isLive])
 
   // Video dimensions from FrameResult (source of truth) — derived to avoid setState in effect
   const videoDimensions = useMemo(() => {
@@ -249,6 +254,7 @@ export default function VideoPlayer({
         <img
           src={previewUrl}
           alt="Annotated live AI preview"
+          onError={() => setPreviewFailed(true)}
           className="w-full h-full object-contain"
         />
       ) : videoUrl ? (
@@ -276,7 +282,13 @@ export default function VideoPlayer({
         </div>
       )}
 
-      {/* Canvas overlay - ALWAYS rendered for pixel-perfect sync */}
+      {isLive && previewFailed && (
+        <div role="status" className="absolute bottom-14 left-3 z-20 rounded bg-amber-950/90 px-3 py-2 text-xs text-amber-100">
+          Live preview unavailable. Showing original video and detection data where available.
+        </div>
+      )}
+
+      {/* Canvas overlay — hidden when annotated JPEG frames are displayed */}
       <canvas
         ref={canvasRef}
         className={`absolute inset-0 w-full h-full pointer-events-none ${previewUrl ? 'hidden' : ''}`}
