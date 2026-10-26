@@ -83,6 +83,7 @@ CAMERA_ID = os.getenv("CAMERA_ID", "cam_001")
 SEND_TO_BACKEND = os.getenv("SEND_TO_BACKEND", "true").lower() == "true"
 BACKEND_SEND_INTERVAL = 1  # Send to backend every frame for real-time updates
 SHOW_WINDOW = os.getenv("SHOW_WINDOW", "false").lower() == "true"  # Disable OpenCV window for web mode
+last_preview_sent = 0.0
 
 # --- Initialize modules ---
 # Use config so we default to fine-tuned best.pt when it exists (assessment / production)
@@ -809,6 +810,23 @@ try:
                          f"Calm={water_conditions.calm_score:.2f}")
             cv2.putText(frame_with_overlay, water_text, (10, frame_with_overlay.shape[0] - 20),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+        # Local dashboard preview: throttle JPEG publishes to avoid saturating inference.
+        # This uses the same annotated frame as OpenCV's local window.
+        if SEND_TO_BACKEND and time.monotonic() - last_preview_sent >= 0.5:
+            last_preview_sent = time.monotonic()
+            try:
+                preview = cv2.resize(frame_with_overlay, (960, max(1, round(frame_with_overlay.shape[0] * 960 / frame_with_overlay.shape[1]))))
+                ok, buffer = cv2.imencode(".jpg", preview, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+                if ok and len(buffer) <= 400_000:
+                    requests.post(
+                        f"{BACKEND_URL}/api/preview/{CAMERA_ID}",
+                        data=buffer.tobytes(),
+                        headers={"Content-Type": "image/jpeg"},
+                        timeout=0.25,
+                    )
+            except requests.RequestException:
+                pass  # Preview is best-effort; inference continues.
 
         # --- g. Display the frame (only if SHOW_WINDOW is enabled) ---
         if SHOW_WINDOW:
