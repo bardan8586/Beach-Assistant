@@ -54,6 +54,9 @@ export default function VideoPlayer({
   
   // Current frame result (timestamp-synced)
   const [currentFrameResult, setCurrentFrameResult] = useState<FrameResult | null>(null)
+  const previewUrl = isLive && cameraId
+    ? `${API_BASE_URL}/api/preview/${encodeURIComponent(cameraId)}.mjpg`
+    : null
 
   // Video dimensions from FrameResult (source of truth) — derived to avoid setState in effect
   const videoDimensions = useMemo(() => {
@@ -242,7 +245,13 @@ export default function VideoPlayer({
       style={{ borderRadius: 'var(--radius-video)' }}
     >
       {/* Video Element */}
-      {videoUrl ? (
+      {previewUrl ? (
+        <img
+          src={previewUrl}
+          alt="Annotated live AI preview"
+          className="w-full h-full object-contain"
+        />
+      ) : videoUrl ? (
         <video
           ref={videoRef}
           src={videoUrl}
@@ -270,7 +279,7 @@ export default function VideoPlayer({
       {/* Canvas overlay - ALWAYS rendered for pixel-perfect sync */}
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 w-full h-full pointer-events-none"
+        className={`absolute inset-0 w-full h-full pointer-events-none ${previewUrl ? 'hidden' : ''}`}
         style={{ zIndex: 10 }}
       />
 
