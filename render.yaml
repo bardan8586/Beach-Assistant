@@ -16,6 +16,7 @@ services:
         value: "false"
       - key: SHOW_WINDOW
         value: "false"
+      # Plain URL. A comma-separated list or a JSON list also boots.
       - key: ALLOWED_ORIGINS
         value: https://beach-assistant-preview.vercel.app
       - key: FRAME_SKIP

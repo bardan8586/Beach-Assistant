@@ -10,7 +10,7 @@ Weights (`best.pt`) and the Roboflow images are not in git. `ai/models/yolov8n.o
 |---|---|---|
 | `VITE_API_URL` | Vercel | `https://` URL of the API, no trailing slash |
 | `VITE_WS_URL` | Vercel | Same host with `wss://` |
-| `ALLOWED_ORIGINS` | API host | Comma-separated. Include `https://beach-assistant-preview.vercel.app` and any other Vercel domain |
+| `ALLOWED_ORIGINS` | API host | One URL, a comma-separated list, or a JSON list. Include `https://beach-assistant-preview.vercel.app` |
 | `MONGODB_URL` | API host | Optional. Empty or unset still serves video, JSONL results, and WebSockets. Mongo is only for swimmer/alert/camera documents |
 | `ENABLE_POSE` | API host | `false` on CPU. `true` loads YOLOv8-Pose as well |
 | `INFERENCE_IMGSZ` | API host | `640` matches training. `416` is faster |

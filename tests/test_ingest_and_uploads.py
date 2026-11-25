@@ -59,3 +59,29 @@ def test_origins_accept_comma_separated_env():
         "http://localhost:5173",
     ]
     assert parse_allowed_origins(["http://localhost:5173"]) == ["http://localhost:5173"]
+
+
+def test_settings_accept_plain_comma_and_json_origins(monkeypatch):
+    """Render crashed when ALLOWED_ORIGINS was a plain URL. All three forms must boot."""
+    from app.config import Settings
+
+    monkeypatch.setenv("ALLOWED_ORIGINS", "https://beach-assistant-preview.vercel.app")
+    single = Settings(_env_file=None)
+    assert single.ALLOWED_ORIGINS == ["https://beach-assistant-preview.vercel.app"]
+
+    monkeypatch.setenv(
+        "ALLOWED_ORIGINS",
+        "https://beach-assistant-preview.vercel.app, http://localhost:5173",
+    )
+    comma = Settings(_env_file=None)
+    assert comma.ALLOWED_ORIGINS == [
+        "https://beach-assistant-preview.vercel.app",
+        "http://localhost:5173",
+    ]
+
+    monkeypatch.setenv(
+        "ALLOWED_ORIGINS",
+        '["https://beach-assistant-preview.vercel.app"]',
+    )
+    as_json = Settings(_env_file=None)
+    assert as_json.ALLOWED_ORIGINS == ["https://beach-assistant-preview.vercel.app"]
