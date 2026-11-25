@@ -3,7 +3,7 @@
  * The banner uses this so the operator sees one state, not a pile of badges.
  */
 
-export type PatrolState = 'idle' | 'clear' | 'watch' | 'alert' | 'emergency' | 'offline' | 'analyzing'
+export type PatrolState = 'idle' | 'clear' | 'watch' | 'alert' | 'emergency' | 'offline' | 'analyzing' | 'waking'
 
 export interface PatrolAlert {
   level: string
@@ -17,12 +17,15 @@ export interface PatrolSwimmer {
 
 export function derivePatrolState(input: {
   apiOnline: boolean | null
+  apiPhase?: 'checking' | 'online' | 'waking' | 'offline'
   wsConnected: boolean
   analyzing: boolean
   hasClip: boolean
   alerts: PatrolAlert[]
   swimmers: PatrolSwimmer[]
 }): PatrolState {
+  if (input.apiPhase === 'waking') return 'waking'
+  if (input.apiPhase === 'offline' && !input.wsConnected) return 'offline'
   if (input.apiOnline === false && !input.wsConnected) return 'offline'
   const open = input.alerts.filter((alert) => !alert.acknowledged)
   if (open.some((alert) => alert.level === 'emergency')) return 'emergency'
