@@ -103,15 +103,23 @@ class ApiService {
   }
 
   /**
-   * Health check
+   * Health check. A missing response or a gateway error means the free host
+   * is probably still waking, not that the product is broken.
    */
-  async healthCheck(): Promise<boolean> {
+  async probeApi(): Promise<'online' | 'waking'> {
     try {
-      await axios.get(`${API_BASE_URL}/health`)
-      return true
-    } catch {
-      return false
+      await axios.get(`${API_BASE_URL}/health`, { timeout: 8000 })
+      return 'online'
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response && error.response.status < 500 && error.response.status !== 408) {
+        return 'online'
+      }
+      return 'waking'
     }
+  }
+
+  async healthCheck(): Promise<boolean> {
+    return (await this.probeApi()) === 'online'
   }
 }
 
