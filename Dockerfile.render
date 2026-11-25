@@ -1,0 +1,39 @@
+# Render free web service: 512 MB RAM. ONNX Runtime only.
+# The torch image remains Dockerfile for local and GPU use.
+FROM python:3.11-slim-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgl1 \
+        libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements-render.txt /tmp/requirements-render.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r /tmp/requirements-render.txt
+
+COPY backend /app/backend
+COPY ai /app/ai
+
+ENV PYTHONUNBUFFERED=1 \
+    INFERENCE_BACKEND=onnx \
+    ENABLE_POSE=false \
+    SHOW_WINDOW=false \
+    FRAME_SKIP=2 \
+    INFERENCE_IMGSZ=640 \
+    MAX_FRAME_WIDTH=960 \
+    ORT_THREADS=1 \
+    MONGODB_URL= \
+    PORT=10000 \
+    HOME=/home/user
+
+RUN useradd -m -u 1000 user \
+    && mkdir -p /app/backend/uploads /home/user \
+    && chown -R user:user /app /home/user
+
+USER user
+WORKDIR /app/backend
+EXPOSE 10000
+
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}"]

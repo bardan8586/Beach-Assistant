@@ -20,6 +20,8 @@ import VideoUploader from './components/VideoUpload/VideoUploader'
 import VideoCommandStrip from './components/VideoUpload/VideoCommandStrip'
 import DataDebugPanel from './components/Debug/DataDebugPanel'
 import CoastalConditionsPanel from './components/Coastal/CoastalConditionsPanel'
+import RiskBanner from './components/Layout/RiskBanner'
+import { derivePatrolState } from './utils/patrolRisk'
 import { useAppStore } from './store/useAppStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import { apiService } from './services/api'
@@ -52,6 +54,7 @@ function App() {
 
   // User-visible errors (e.g. playback load failed)
   const [playbackError, setPlaybackError] = useState<string | null>(null)
+  const [apiOnline, setApiOnline] = useState<boolean | null>(null)
 
   const statusPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   
@@ -71,7 +74,7 @@ function App() {
   } = useAppStore()
 
   // Connect WebSocket for real-time updates
-  const { isConnected: wsConnected } = useWebSocket({
+  const { isConnected: wsConnected, connectionState } = useWebSocket({
     cameraId: selectedCamera,
     onMessage: (message) => {
       // Backend sends { type: "frame_result", camera_id, data: FrameResult } — unwrap and use .data
@@ -103,6 +106,7 @@ function App() {
             confidence: s.confidence ?? 0.8,
             risk_score: s.risk_score ?? 0,
             risk_level: s.risk_level ?? 'LOW',
+            detection_class: (s as { detection_class?: string }).detection_class,
             behavior: s.behavior ?? 'NORMAL',
             zone: s.zone ?? 'SAFE',
             time_in_water: s.time_in_water ?? 0,
@@ -160,6 +164,21 @@ function App() {
   useEffect(() => {
     setIsConnected(wsConnected)
   }, [wsConnected, setIsConnected])
+
+  useEffect(() => {
+    let cancelled = false
+    const probe = () => {
+      void apiService.healthCheck().then((ok) => {
+        if (!cancelled) setApiOnline(ok)
+      })
+    }
+    probe()
+    const timer = window.setInterval(probe, 15000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [])
 
   useEffect(() => {
     void apiService
@@ -381,8 +400,20 @@ function App() {
       <Header
         selectedCamera={selectedCamera}
         isConnected={wsConnected}
+        connectionState={connectionState}
         processingStatus={processingStatus}
         frameCount={frameResults.length}
+        apiOnline={apiOnline}
+      />
+      <RiskBanner
+        state={derivePatrolState({
+          apiOnline,
+          wsConnected,
+          analyzing: processing || processingStatus === 'uploading',
+          hasClip: Boolean(uploadedVideo),
+          alerts,
+          swimmers,
+        })}
       />
 
       <VideoCommandStrip
@@ -501,6 +532,7 @@ function App() {
                   )}
                   <VideoUploader
                     onVideoSelected={handleVideoSelected}
+                    onReject={setPlaybackError}
                     uploadProgress={uploadProgress}
                     stage={processingStatus === 'uploading' ? 'uploading' : 'idle'}
                     maxUploadBytes={maxUploadBytes}
@@ -696,12 +728,20 @@ function App() {
               <dl className="space-y-3.5 text-sm">
                 <div className="flex justify-between gap-3 border-b border-slate-700/50 pb-3">
                   <dt className="text-slate-400">Backend API</dt>
-                  <dd className="font-semibold text-emerald-400">Online</dd>
+                  <dd className={`font-semibold ${apiOnline ? 'text-emerald-400' : apiOnline === false ? 'text-red-400' : 'text-amber-300'}`}>
+                    {apiOnline === null ? 'Checking…' : apiOnline ? 'Online' : 'Unreachable'}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-3 border-b border-slate-700/50 pb-3">
                   <dt className="text-slate-400">WebSocket</dt>
-                  <dd className={`font-semibold ${wsConnected ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {wsConnected ? 'Connected' : 'Disconnected'}
+                  <dd className={`font-semibold ${wsConnected ? 'text-emerald-400' : connectionState === 'reconnecting' || connectionState === 'connecting' ? 'text-amber-300' : 'text-red-400'}`}>
+                    {connectionState === 'connected'
+                      ? 'Connected'
+                      : connectionState === 'connecting'
+                        ? 'Connecting…'
+                        : connectionState === 'reconnecting'
+                          ? 'Reconnecting…'
+                          : 'Disconnected'}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-3 border-b border-slate-700/50 pb-3">

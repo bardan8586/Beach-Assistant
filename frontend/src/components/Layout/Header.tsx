@@ -3,15 +3,25 @@
  */
 
 import { useState, useEffect } from 'react'
+import type { ConnectionState } from '../../hooks/useWebSocket'
 
 interface HeaderProps {
   selectedCamera: string
   isConnected: boolean
+  connectionState?: ConnectionState
   processingStatus?: string
   frameCount?: number
+  apiOnline?: boolean | null
 }
 
-export default function Header({ selectedCamera, isConnected, processingStatus, frameCount = 0 }: HeaderProps) {
+export default function Header({
+  selectedCamera,
+  isConnected,
+  connectionState,
+  processingStatus,
+  frameCount = 0,
+  apiOnline = null,
+}: HeaderProps) {
   const [currentTime, setCurrentTime] = useState(new Date())
 
   useEffect(() => {
@@ -19,8 +29,22 @@ export default function Header({ selectedCamera, isConnected, processingStatus, 
     return () => clearInterval(timer)
   }, [])
 
-  const statusLabel = isConnected ? 'Live' : 'Offline'
-  const statusAria = isConnected ? 'System connected' : 'System disconnected'
+  const feedState: ConnectionState = connectionState ?? (isConnected ? 'connected' : 'offline')
+  const statusLabel =
+    feedState === 'connected'
+      ? 'Live'
+      : feedState === 'connecting'
+        ? 'Connecting'
+        : feedState === 'reconnecting'
+          ? 'Reconnecting'
+          : 'Offline'
+  const statusAria = `Feed ${statusLabel}${apiOnline === false ? ', API offline' : apiOnline ? ', API online' : ''}`
+  const dotClass =
+    feedState === 'connected'
+      ? 'bg-emerald-400 shadow-[0_0_8px_rgb(52_211_153)]'
+      : feedState === 'connecting' || feedState === 'reconnecting'
+        ? 'bg-amber-300'
+        : 'bg-red-400'
   const hasLiveData = frameCount > 0
 
   return (
@@ -63,7 +87,7 @@ export default function Header({ selectedCamera, isConnected, processingStatus, 
             aria-label={statusAria}
           >
             <span
-              className={`h-2 w-2 shrink-0 rounded-full ${isConnected ? 'bg-emerald-400 shadow-[0_0_8px_rgb(52_211_153)]' : 'bg-red-400'}`}
+              className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`}
             />
             <span className="text-xs font-semibold text-white sm:text-sm">{statusLabel}</span>
             {hasLiveData && (

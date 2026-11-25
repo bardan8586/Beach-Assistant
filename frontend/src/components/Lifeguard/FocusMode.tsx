@@ -22,14 +22,11 @@ interface FocusModeProps {
 
 export default function FocusMode({ swimmer, onExit, videoRef }: FocusModeProps) {
   const [riskHistory, setRiskHistory] = useState<number[]>([])
-  
   const riskScore = swimmer?.risk_score ?? 0
 
-  // Track risk score over time
   useEffect(() => {
-    if (swimmer) {
-      setRiskHistory(prev => [...prev.slice(-60), riskScore])
-    }
+    if (!swimmer) return
+    setRiskHistory((prev) => [...prev.slice(-60), riskScore])
   }, [swimmer, riskScore])
 
   if (!swimmer) {

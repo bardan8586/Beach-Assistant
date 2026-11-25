@@ -37,33 +37,40 @@ class Database:
         self.client: Optional[AsyncIOMotorClient] = None
         self.database: Optional[AsyncIOMotorDatabase] = None
     
-    async def connect(self):
+    async def connect(self) -> bool:
         """
         Connect to MongoDB Atlas
         
         This method is called once during app startup.
         Creates indexes for optimal query performance.
         """
+        url = (settings.MONGODB_URL or "").strip()
+        if not url or url.lower() in {"disabled", "skip", "none"}:
+            logger.info("MongoDB not configured; continuing without a database")
+            return False
         try:
-            logger.info(f"Connecting to MongoDB at {settings.MONGODB_URL[:20]}...")
+            logger.info(f"Connecting to MongoDB at {url[:20]}...")
             
             # Create async MongoDB client
-            self.client = AsyncIOMotorClient(
-                settings.MONGODB_URL,
+            client = AsyncIOMotorClient(
+                url,
                 serverSelectionTimeoutMS=5000  # 5 second timeout
             )
             
-            # Get database instance
-            self.database = self.client[settings.DATABASE_NAME]
-            
-            # Test connection
-            await self.client.admin.command('ping')
+            # Test connection before publishing the client. A failed ping must
+            # leave health as disconnected instead of a half-open client.
+            await client.admin.command('ping')
+            self.client = client
+            self.database = client[settings.DATABASE_NAME]
             logger.info(f"✓ Connected to MongoDB database: {settings.DATABASE_NAME}")
             
             # Create indexes for better performance
             await self._create_indexes()
+            return True
             
         except Exception as e:
+            self.client = None
+            self.database = None
             logger.error(f"✗ Failed to connect to MongoDB: {e}")
             raise
     

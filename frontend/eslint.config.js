@@ -19,5 +19,10 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // Object URLs, alert speech, and short risk history are effects on purpose.
+      // The React Compiler preset flags those setState calls even when the effect is the right place.
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
 ])

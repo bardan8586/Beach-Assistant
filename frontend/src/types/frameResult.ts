@@ -158,11 +158,33 @@ export interface FrameResult {
  * Helper function to convert legacy swimmer data to FrameResult format
  * For backward compatibility during migration
  */
-export function legacyToFrameResult(legacyData: any): FrameResult {
+export function legacyToFrameResult(legacyData: {
+  video_width?: number
+  video_height?: number
+  video_id?: string
+  camera_id?: string
+  frame_index?: number
+  timestamp_ms?: number
+  scene?: FrameResult['scene']
+  metrics?: FrameResult['metrics']
+  system_mode?: FrameResult['system_mode']
+  swimmers?: Array<{
+    id?: number
+    bbox?: { x?: number; y?: number; w?: number; h?: number }
+    confidence?: number
+    risk_score?: number
+    risk_level?: string
+    behavior?: string
+    zone?: string
+    time_in_water?: number
+    distance_from_shore?: number
+    velocity?: number
+  }>
+}): FrameResult {
   const videoWidth = legacyData.video_width || 1280;
   const videoHeight = legacyData.video_height || 720;
   
-  const swimmers: SwimmerData[] = (legacyData.swimmers || []).map((s: any) => ({
+  const swimmers: SwimmerData[] = (legacyData.swimmers || []).map((s) => ({
     track_id: s.id || 0,
     bbox: {
       x: s.bbox?.x || 0,
@@ -172,9 +194,9 @@ export function legacyToFrameResult(legacyData: any): FrameResult {
     },
     confidence: s.confidence || 0.0,
     risk_score: s.risk_score || 0,
-    risk_level: s.risk_level || 'LOW',
-    behavior: s.behavior || 'NORMAL',
-    zone: s.zone || 'SAFE',
+    risk_level: (s.risk_level === 'MEDIUM' || s.risk_level === 'HIGH' || s.risk_level === 'CRITICAL') ? s.risk_level : 'LOW',
+    behavior: s.behavior === 'STATIONARY' || s.behavior === 'ERRATIC' || s.behavior === 'RAPID' ? s.behavior : 'NORMAL',
+    zone: s.zone === 'CAUTION' || s.zone === 'DANGER' ? s.zone : 'SAFE',
     time_in_water: s.time_in_water || 0.0,
     distance_from_shore: s.distance_from_shore,
     velocity: s.velocity || 0.0,

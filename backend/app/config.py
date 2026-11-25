@@ -11,8 +11,58 @@ Why Pydantic Settings?
 - Automatic .env file loading
 """
 
-from pydantic_settings import BaseSettings
-from typing import List, Optional
+import json
+from typing import Optional
+
+from pydantic import AliasChoices, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# The only list-shaped setting. It is stored as a string on purpose:
+# pydantic-settings 2.1 JSON-decodes List fields before validators run, so a
+# plain URL in ALLOWED_ORIGINS crashed Render at startup.
+DEFAULT_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://localhost:5176",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+    "http://127.0.0.1:5175",
+    "http://127.0.0.1:5176",
+    "https://beach-assistant-preview.vercel.app",
+]
+
+
+def parse_allowed_origins(value):
+    """Accept one URL, a comma-separated list, a JSON list, or a Python list.
+
+    pydantic-settings 2.1 raises SettingsError on a non-JSON env value when the
+    field type is ``list``. Callers that build Settings keep the env value as
+    text and parse it here.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value).strip()
+    if not text:
+        return []
+    if text.startswith("["):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "ALLOWED_ORIGINS must be one URL, a comma-separated list, "
+                "or a JSON list of URLs"
+            ) from exc
+        if isinstance(parsed, str):
+            parsed = [parsed]
+        if not isinstance(parsed, list):
+            raise ValueError("ALLOWED_ORIGINS JSON value must be a list of URLs")
+        return [str(item).strip() for item in parsed if str(item).strip()]
+    return [part.strip() for part in text.split(",") if part.strip()]
 
 
 class Settings(BaseSettings):
@@ -32,21 +82,19 @@ class Settings(BaseSettings):
     API_VERSION: str = "v1"
     PROJECT_NAME: str = "Beach Safety Monitor"
     
-    # -------------------- CORS Configuration --------------------
-    # Allow frontend to connect from these origins (Vite may use 5173, 5174, 5175, etc.)
-    ALLOWED_ORIGINS: List[str] = [
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:5175",
-        "http://localhost:5176",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-        "http://127.0.0.1:5175",
-        "http://127.0.0.1:5176",
-    ]
-    
+    # Raw env text. A List annotation makes pydantic-settings 2.1 require JSON.
+    origins_from_env: str = Field(
+        default="",
+        validation_alias=AliasChoices("ALLOWED_ORIGINS"),
+    )
+
+    @property
+    def ALLOWED_ORIGINS(self) -> list[str]:
+        """CORS origins. Empty env keeps the local and Vercel defaults."""
+        if not self.origins_from_env.strip():
+            return list(DEFAULT_ALLOWED_ORIGINS)
+        return parse_allowed_origins(self.origins_from_env)
+
     # -------------------- WebSocket Configuration --------------------
     WS_HEARTBEAT_INTERVAL: int = 30  # seconds between heartbeat pings
     WS_MESSAGE_MAX_SIZE: int = 10 * 1024 * 1024  # 10MB max message size
@@ -90,12 +138,12 @@ class Settings(BaseSettings):
 
     # Video upload cap (bytes). Enforced in /api/video/upload while streaming the body.
     MAX_UPLOAD_VIDEO_BYTES: int = 50 * 1024 * 1024  # 50 MB default
-    
-    class Config:
-        """Pydantic configuration"""
-        env_file = ".env"  # Load from .env file if it exists
-        case_sensitive = False  # Environment variables are case-insensitive
-        extra = "ignore"  # Ignore unrelated env vars instead of failing startup
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
 
 # Global settings instance

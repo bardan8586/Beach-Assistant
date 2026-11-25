@@ -1,0 +1,50 @@
+{
+  "generated_at": "2026-11-25 00:39 UTC",
+  "model": "yolov8n.pt",
+  "device": "cpu",
+  "torch": "2.15.0+cpu",
+  "platform": "Linux-6.12.113+-x86_64-with-glibc2.39",
+  "processor": "x86_64",
+  "frame_shape": [
+    720,
+    1280,
+    3
+  ],
+  "note": "YOLOv8n public checkpoint, not the fine-tuned beach weights. Random frames, so this is latency only, not accuracy.",
+  "single": [
+    {
+      "imgsz": 640,
+      "frames": 16,
+      "seconds": 0.2914354210000738,
+      "ms_per_frame": 18.214713812504613,
+      "fps": 54.90067043016006,
+      "fps_with_legacy_100ms_wait": 8.45918386763646
+    },
+    {
+      "imgsz": 416,
+      "frames": 16,
+      "seconds": 0.1600261569999475,
+      "ms_per_frame": 10.001634812496718,
+      "fps": 99.98365454720786,
+      "fps_with_legacy_100ms_wait": 9.09077398444623
+    }
+  ],
+  "batch": {
+    "imgsz": 640,
+    "batch": 4,
+    "frames": 16,
+    "seconds": 0.4794286229999898,
+    "ms_per_frame": 29.96428893749936,
+    "fps": 33.37305958055062
+  },
+  "onnx": {
+    "imgsz": 640,
+    "frames": 16,
+    "seconds": 0.8955382240000063,
+    "ms_per_frame": 55.97113900000039,
+    "fps": 17.866350727648996,
+    "fps_with_legacy_100ms_wait": 6.411442568230507,
+    "file": "yolov8n.onnx"
+  },
+  "legacy_wait_ms": 100
+}

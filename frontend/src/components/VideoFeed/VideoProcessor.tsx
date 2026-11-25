@@ -27,6 +27,7 @@ export default function VideoProcessor({ videoFile }: VideoProcessorProps) {
     processing: false,
   })
   const [videoUrl, setVideoUrl] = useState<string>('')
+  const { showBoundingBoxes, showHeatmap, showZones } = useAppStore()
 
   useEffect(() => {
     if (videoFile) {
@@ -65,8 +66,6 @@ export default function VideoProcessor({ videoFile }: VideoProcessorProps) {
       </div>
     )
   }
-
-  const { showBoundingBoxes, showHeatmap, showZones } = useAppStore()
 
   return (
     <div className="space-y-4">

@@ -35,7 +35,7 @@ export const playbackService = {
   /**
    * Load video metadata (dimensions, FPS, duration)
    */
-  async loadMetadata(videoId: string): Promise<any> {
+  async loadMetadata(videoId: string): Promise<Record<string, unknown>> {
     const url = `${API_BASE_URL}/api/video/${videoId}/metadata`
     
     console.log(`📥 Loading metadata from: ${url}`)

@@ -31,6 +31,8 @@ export const SEVERITY_COLORS = {
 
 // Refresh intervals (ms)
 export const REFRESH_INTERVAL = 5000;  // 5 seconds
-export const WS_RECONNECT_INTERVAL = 3000;  // 3 seconds
+export const WS_RECONNECT_INTERVAL = 3000;  // legacy fixed delay
+export const WS_RECONNECT_BASE_MS = 1000;
+export const WS_RECONNECT_MAX_MS = 15000;
 
 

@@ -1,0 +1,38 @@
+# Render Blueprint. Free web service: 512 MB RAM, 0.1 CPU, spins down when idle.
+# Confirm the Blueprint in the Render dashboard. This file does not create the account.
+services:
+  - type: web
+    name: beach-assistant-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile.render
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: INFERENCE_BACKEND
+        value: onnx
+      - key: ENABLE_POSE
+        value: "false"
+      - key: SHOW_WINDOW
+        value: "false"
+      # Plain URL. A comma-separated list or a JSON list also boots.
+      - key: ALLOWED_ORIGINS
+        value: https://beach-assistant-preview.vercel.app
+      - key: FRAME_SKIP
+        value: "2"
+      - key: INFERENCE_IMGSZ
+        value: "640"
+      - key: MAX_FRAME_WIDTH
+        value: "960"
+      - key: ORT_THREADS
+        value: "1"
+      # Leave blank. Set a real Atlas URL in the dashboard only if you want Mongo.
+      - key: MONGODB_URL
+        value: ""
+      - key: BEACH_DEFAULT_LAT
+        value: "-33.890842"
+      - key: BEACH_DEFAULT_LON
+        value: "151.274291"
+      - key: BEACH_DEFAULT_LABEL
+        value: Bondi Beach, NSW

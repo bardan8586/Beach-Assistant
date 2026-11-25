@@ -1,0 +1,30 @@
+# Copy or point flyctl at this file. It does not create an app by itself.
+#   fly launch --no-deploy --copy-config --config deploy/fly.toml
+#   fly secrets set MONGODB_URL=... ALLOWED_ORIGINS=https://beach-assistant-preview.vercel.app
+#   fly deploy --config deploy/fly.toml
+#
+# 2 GB is the smallest size that can load YOLOv8n on CPU. Free shared-cpu
+# allowances change; check the current Fly pricing before launching.
+
+app = "beach-assistant"
+primary_region = "syd"
+
+[build]
+  dockerfile = "../Dockerfile"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+
+[[vm]]
+  memory = "2gb"
+  cpu_kind = "shared"
+  cpus = 2

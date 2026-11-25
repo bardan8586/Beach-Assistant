@@ -3,6 +3,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import axios from 'axios'
 import { apiService } from '../../services/api'
 import type { CoastalConditionsResponse } from '../../types/coastal'
 
@@ -108,7 +109,13 @@ export default function CoastalConditionsPanel() {
       const res = await apiService.getCoastalConditions()
       setData(res)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load coastal data')
+      if (axios.isAxiosError(e) && !e.response) {
+        setError('Coastal conditions need the Beach Assistant API. This page cannot reach it until the backend is running and VITE_API_URL points at it.')
+      } else if (axios.isAxiosError(e) && e.response) {
+        setError(`Coastal conditions failed (${e.response.status}). Refresh, or check the API logs.`)
+      } else {
+        setError(e instanceof Error ? e.message : 'Failed to load coastal data')
+      }
       setData(null)
     } finally {
       setLoading(false)
@@ -182,7 +189,7 @@ export default function CoastalConditionsPanel() {
 
         {loading && !data ? <SkeletonGrid /> : null}
 
-        {(!loading || data) && (
+        {data ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <StatCard
               accent="sky"
@@ -229,7 +236,7 @@ export default function CoastalConditionsPanel() {
               sub={dayNight ? dayNight : undefined}
             />
           </div>
-        )}
+        ) : null}
 
         <p className="mt-4 text-[11px] leading-relaxed text-slate-400">
           {data?.attribution ??

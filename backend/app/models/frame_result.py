@@ -47,6 +47,10 @@ class SwimmerData(BaseModel):
     
     # Motion metrics
     velocity: float = Field(default=0.0, description="Current velocity (pixels/second)")
+    detection_class: Optional[str] = Field(
+        None,
+        description="Canonical detector class: drowning, swimming, out_of_water, or person",
+    )
     
     class Config:
         json_schema_extra = {
