@@ -901,7 +901,11 @@ finally:
         video_stream.stop()
     else:
         video_stream.release()
-    cv2.destroyAllWindows()
+    # opencv-python-headless, used on Render, has no GUI backend.
+    try:
+        cv2.destroyAllWindows()
+    except cv2.error:
+        pass
     
     # 🏖️ Save beach calibration if complete
     if beach_calibration.profile.is_calibrated:

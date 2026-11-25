@@ -8,6 +8,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 import os
 import shutil
+import sys
 from pathlib import Path
 import uuid
 import subprocess
@@ -17,6 +18,7 @@ import cv2
 import json
 from typing import Optional
 from app.utils import results_storage
+from app.utils.ai_runtime import required_ai_modules
 from app.utils.uploads import safe_video_suffix, video_upload_error
 from app.config import settings
 
@@ -38,9 +40,10 @@ def _run_ai_preflight(python_cmd: str) -> dict:
     Why: avoids "started processing" but no frames due to missing deps (cv2/torch/ultralytics).
     Returns a JSON-serializable dict with import results.
     """
+    modules = required_ai_modules()
     probe_code = r"""
-import json, sys, importlib, platform
-mods = ["cv2", "torch", "ultralytics"]
+import json, sys, importlib, platform, os
+mods = [m for m in os.environ.get("AI_PREFLIGHT_MODULES", "").split(",") if m]
 out = {
   "executable": sys.executable,
   "version": sys.version,
@@ -55,11 +58,14 @@ for m in mods:
     out["imports"][m] = {"ok": False, "error": str(e)}
 print(json.dumps(out))
 """
+    probe_env = os.environ.copy()
+    probe_env["AI_PREFLIGHT_MODULES"] = ",".join(modules)
     completed = subprocess.run(
         [python_cmd, "-c", probe_code],
         capture_output=True,
         text=True,
         timeout=20,
+        env=probe_env,
     )
     stdout = (completed.stdout or "").strip()
     stderr = (completed.stderr or "").strip()
@@ -272,16 +278,19 @@ async def process_video(video_id: str, camera_id: Optional[str] = None, show_win
         env["SHOW_WINDOW"] = "true" if show_window else "false"
         env["PYTHONUNBUFFERED"] = "1"
         
-        # Use AI venv Python if it exists (has torch/ultralytics); else system python3
+        # Prefer a local AI venv, then this API process, then python3 on PATH.
+        # Render's slim image has no ai/venv and no torch; sys.executable is that image.
+        ai_python = (os.environ.get("AI_PYTHON") or "").strip()
         ai_venv_python = project_root / "ai" / "venv" / "bin" / "python"
-        if ai_venv_python.exists():
+        if ai_python:
+            python_cmd = ai_python
+            logger.info(f"Using AI_PYTHON: {python_cmd}")
+        elif ai_venv_python.exists():
             python_cmd = str(ai_venv_python)
             logger.info(f"Using AI venv Python: {python_cmd}")
         else:
-            python_cmd = "python3" if shutil.which("python3") else "python"
-            logger.warning(
-                "AI venv not found at ai/venv. Install AI deps: cd ai && python3 -m venv venv && pip install -r requirements.txt"
-            )
+            python_cmd = sys.executable or ("python3" if shutil.which("python3") else "python")
+            logger.info(f"Using API interpreter for the worker: {python_cmd}")
 
         # Preflight AI environment so we fail fast with a helpful message.
         try:

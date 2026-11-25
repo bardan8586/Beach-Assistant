@@ -79,7 +79,7 @@ cd frontend && npm run lint && npx tsc -b --pretty false
 
 ## Deploy
 
-The frontend stays on Vercel. The API image is `Dockerfile` (CPU torch, FastAPI, the AI worker). It listens on `$PORT`, default **7860**, which is what a Hugging Face Docker Space expects. Host notes, including the Space sync script and the GitHub Action, are in [docs/DEPLOY.md](docs/DEPLOY.md).
+The frontend stays on Vercel. Render's free web service uses `Dockerfile.render` and ONNX Runtime (`ai/models/yolov8n.onnx`), with no torch in that image. `Dockerfile` is still the torch image for a local or GPU machine. Deploy steps are in [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ```bash
 docker compose up --build   # API on :8000, Mongo on :27017. Large image. Not run in CI.

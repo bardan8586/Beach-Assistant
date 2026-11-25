@@ -6,6 +6,16 @@ import requests
 
 from classes import canonicalize_class, is_target_class
 
+
+def _use_onnx(model_name: str) -> bool:
+    """ONNX when asked, or when the weights path is already an .onnx file."""
+    backend = os.getenv("INFERENCE_BACKEND", "auto").strip().lower()
+    if backend == "onnx":
+        return True
+    if backend in {"pytorch", "torch"}:
+        return False
+    return str(model_name).lower().endswith(".onnx")
+
 class Detector:
     """
     Unified detector supporting both local YOLOv8 models and Roboflow Inference API.
@@ -36,14 +46,30 @@ class Detector:
         self.enable_pose = enable_pose
         self.roboflow_config = {}
         
+        self._onnx = None
         if self.model_type == "roboflow":
             self._init_roboflow(roboflow_api_key, roboflow_model_id, roboflow_version)
+        elif _use_onnx(model_name):
+            self._init_onnx(model_name)
+            if self.enable_pose:
+                print("ENABLE_POSE is ignored on the ONNX runtime path (no torch).")
+                self.enable_pose = False
         else:
             self._init_yolo(model_name, device)
             
             # Initialize pose model if enabled
             if self.enable_pose:
                 self._init_pose_model(device)
+
+    def _init_onnx(self, model_name: str):
+        from onnx_yolo import OnnxYolo
+
+        print(f"Loading ONNX model: {model_name}")
+        self._onnx = OnnxYolo(model_name)
+        self.device = "cpu"
+        self.imgsz = self._onnx.imgsz
+        self._is_custom_model = not self._onnx.coco_person_only
+        print(f"ONNX model ready ({self._onnx.path})")
     
     def _init_yolo(self, model_name: str, device: Optional[str]):
         """Initialize YOLOv8 model. Accepts standard names (yolov8s.pt) or path to fine-tuned weights."""
@@ -143,6 +169,8 @@ class Detector:
         """
         if self.model_type == "roboflow":
             detections = self._detect_roboflow(frame, conf_thres)
+        elif self._onnx is not None:
+            detections = self._onnx.detect(frame, conf_thres, iou_thres)
         else:
             detections = self._detect_yolo(frame, conf_thres, iou_thres, imgsz=None)
         

@@ -38,8 +38,8 @@ async def lifespan(app: FastAPI):
     try:
         # Connect to MongoDB (non-blocking, won't fail if connection fails)
         try:
-            await database.connect()
-            logger.info("✓ MongoDB connected")
+            if await database.connect():
+                logger.info("✓ MongoDB connected")
         except Exception as e:
             logger.warning(f"⚠ MongoDB connection failed (continuing anyway): {e}")
             logger.warning("⚠ API will work but database operations will fail")
@@ -50,7 +50,6 @@ async def lifespan(app: FastAPI):
         # Shutdown
         logger.info("🛑 Shutting down Beach Safety Monitor Backend...")
         await database.disconnect()
-        logger.info("✓ MongoDB disconnected")
 
 
 # Create FastAPI application
@@ -142,6 +141,8 @@ def _model_label() -> str:
     name = os.getenv("MODEL_NAME", "").strip()
     if name:
         return name
+    if os.getenv("INFERENCE_BACKEND", "").strip().lower() == "onnx":
+        return "yolov8n.onnx"
     return "yolov8n.pt"
 
 

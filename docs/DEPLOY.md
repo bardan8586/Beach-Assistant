@@ -2,7 +2,7 @@
 
 The dashboard stays on Vercel. The API is a Docker image that also runs the YOLO worker. Nothing in this repository creates a hosting account or uploads an image. The steps below are what to click after you have accounts.
 
-Weights (`best.pt`) and the Roboflow images are not in git. A host will start, and `/health` will pass, without them. The worker then loads `yolov8n.pt` (COCO person) on first analysis. To use beach weights instead, set `MODEL_URL` to a direct file URL or `HF_MODEL_REPO` (and optional `HF_MODEL_FILENAME`, default `best.pt`). A private model repo also needs `HF_TOKEN` on the Space. `MODEL_NAME=/missing/best.pt` does not crash the process; it falls back to `yolov8n.pt`.
+Weights (`best.pt`) and the Roboflow images are not in git. `ai/models/yolov8n.onnx` is. Render's free service runs that file with ONNX Runtime and does not install torch. A local or GPU run still uses `yolov8n.pt` when `best.pt` is missing. Set `MODEL_URL` to a `.pt` or `.onnx` file to override either path. `MODEL_NAME` pointing at a missing file does not crash startup.
 
 ## What you set everywhere
 
@@ -16,7 +16,8 @@ Weights (`best.pt`) and the Roboflow images are not in git. A host will start, a
 | `INFERENCE_IMGSZ` | API host | `640` matches training. `416` is faster |
 | `FRAME_SKIP` | API host | `2` processes every other frame |
 | `SHOW_WINDOW` | API host | Keep `false` on a server |
-| `MODEL_URL` | API host | Optional. Direct URL of a `.pt` file. Wins over the other model settings |
+| `MODEL_URL` | API host | Optional. Direct URL of a `.pt` or `.onnx` file. Wins over the other model settings |
+| `INFERENCE_BACKEND` | API host | `onnx` on Render free. Unset or `pytorch` keeps torch |
 | `HF_MODEL_REPO` | API host | Optional. Hugging Face model repo id, for example `your-user/beach-assistant-weights` |
 | `HF_MODEL_FILENAME` | API host | Optional. File inside that repo. Default `best.pt` |
 | `HF_TOKEN` | API host, secret | Only if `HF_MODEL_REPO` is private. This is not the token used by the GitHub Action |
@@ -26,7 +27,7 @@ Weights (`best.pt`) and the Roboflow images are not in git. A host will start, a
 
 MongoDB Atlas free tier is enough if you want the database. The API already tolerates a refused Mongo connection.
 
-YOLOv8n needs about 2 GB of RAM once torch is loaded. Render's free instance (512 MB) will be killed during inference. Use a 2 GB instance or larger.
+The torch image needs about 2 GB of RAM. Do not point the free Render service at `Dockerfile`. `Dockerfile.render` is the 512 MB path, and the measured peak is in the Render section below.
 
 ## Vercel (frontend, already the preview host)
 
@@ -37,17 +38,44 @@ YOLOv8n needs about 2 GB of RAM once torch is loaded. Render's free instance (51
 5. Deployments → Redeploy the production deployment so Vite bakes the variables into the build. Changing them later does nothing until the next build.
 6. `frontend/vercel.json` is already a Vite SPA rewrite. Do not change the framework preset away from Vite.
 
-## Render
+## Render free (chosen host)
 
-1. https://dashboard.render.com → New → Blueprint, or New → Web Service → Docker.
-2. Connect this GitHub repository.
-3. If you use the Blueprint, Render reads `render.yaml`. The plan there is `starter` (paid, enough RAM). Do not switch it to Free if you want video analysis.
-4. Environment → set `MONGODB_URL` if you have Atlas, and set `ALLOWED_ORIGINS` to the Vercel origin. `render.yaml` already includes the preview origin; add a custom domain if you have one.
-5. Create Web Service and wait for the Docker build. The first build downloads CPU torch and is slow.
-6. Open `https://<service>.onrender.com/health`. You want `{"status":"healthy",...}`.
-7. Put that origin into the Vercel variables above and redeploy the frontend.
+`render.yaml` is a Blueprint for a **free** web service. It builds `Dockerfile.render`, which installs `requirements-render.txt` only: ONNX Runtime, NumPy, OpenCV headless, Norfair, and FastAPI. That image does not install torch or ultralytics. The full torch image is still `Dockerfile` for a local or GPU machine.
 
-Render free web services sleep. The first request after sleep can take half a minute, and the instance will not keep a model hot. That is a reason to use a plan that does not spin down if the camera feed is live.
+The shipped weights are `ai/models/yolov8n.onnx` (COCO nano, fixed 640 input). Set `MODEL_URL` to a different `.onnx` file to override it. `INFERENCE_BACKEND=onnx` selects this path. Leave it as `pytorch` (or unset) to keep the torch path.
+
+Measured on this workspace (Intel Xeon, ONNX Runtime 1.32, 1 thread, imgsz 640), not on Render's 0.1 CPU:
+
+| Moment | Resident memory |
+|---|---:|
+| `GET /health` with Mongo unset | 98 MB |
+| ONNX session after one 1280×720 frame | 175 MB in that process |
+| Peak while the API stayed up and a 12-frame 960×540 clip was processed | **365 MB** |
+
+Latency on that same host was **56 ms per frame** (8 frames after one warmup, 1280×720). Render's 0.1 CPU will be slower. 365 MB of 512 MB leaves about 147 MB. The free service sets `MAX_FRAME_WIDTH=960`, `FRAME_SKIP=2`, and `ORT_THREADS=1` so a large upload is downscaled before the network. The ONNX file itself is fixed at 640, so `INFERENCE_IMGSZ` does not shrink it.
+
+### Blueprint clicks
+
+1. https://dashboard.render.com → New → Blueprint.
+2. Connect GitHub and this repository. Render reads `render.yaml`.
+3. Confirm the service `beach-assistant-api` is plan **Free**, Docker, health check path `/health`.
+4. The Blueprint already sets:
+   - `ALLOWED_ORIGINS=https://beach-assistant-preview.vercel.app`
+   - `ENABLE_POSE=false`
+   - `SHOW_WINDOW=false`
+   - `INFERENCE_BACKEND=onnx`
+   - `MONGODB_URL` empty (optional; paste an Atlas URL later if you want it)
+5. Apply the Blueprint and wait for the Docker build. The first boot after idle takes a few seconds because free instances spin down.
+6. Open `https://<service>.onrender.com/health`. You want `"status": "healthy"` and `"model": "yolov8n.onnx"`. `"database": "disconnected"` is expected until you set `MONGODB_URL`.
+
+### Vercel, after the Render URL exists
+
+1. Vercel → the beach-assistant-preview project → Settings → Environment Variables.
+2. `VITE_API_URL` = `https://<service>.onrender.com` (no trailing slash).
+3. `VITE_WS_URL` = `wss://<service>.onrender.com`.
+4. Redeploy the frontend so Vite bakes those values in. The dashboard should leave Offline after that build.
+
+Free instances sleep. The first request after sleep is slow, and a WebSocket drops while the process is down. That is the free tier, not a failed health check.
 
 ## Railway
 

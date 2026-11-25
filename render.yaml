@@ -1,25 +1,34 @@
-# Render Blueprint. Connecting the repo does not deploy until you confirm it
-# in the Render dashboard. The free instance has too little RAM to load YOLO;
-# use a paid instance with at least 2 GB, or run the API only and keep
-# inference on a machine that already has the weights.
+# Render Blueprint. Free web service: 512 MB RAM, 0.1 CPU, spins down when idle.
+# Confirm the Blueprint in the Render dashboard. This file does not create the account.
 services:
   - type: web
     name: beach-assistant-api
     runtime: docker
-    dockerfilePath: ./Dockerfile
-    plan: starter
+    dockerfilePath: ./Dockerfile.render
+    plan: free
     healthCheckPath: /health
     envVars:
       - key: PYTHONUNBUFFERED
         value: "1"
+      - key: INFERENCE_BACKEND
+        value: onnx
       - key: ENABLE_POSE
         value: "false"
       - key: SHOW_WINDOW
         value: "false"
-      - key: MONGODB_URL
-        sync: false
       - key: ALLOWED_ORIGINS
         value: https://beach-assistant-preview.vercel.app
+      - key: FRAME_SKIP
+        value: "2"
+      - key: INFERENCE_IMGSZ
+        value: "640"
+      - key: MAX_FRAME_WIDTH
+        value: "960"
+      - key: ORT_THREADS
+        value: "1"
+      # Leave blank. Set a real Atlas URL in the dashboard only if you want Mongo.
+      - key: MONGODB_URL
+        value: ""
       - key: BEACH_DEFAULT_LAT
         value: "-33.890842"
       - key: BEACH_DEFAULT_LON
