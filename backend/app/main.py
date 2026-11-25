@@ -124,8 +124,25 @@ async def health_check():
     
     return {
         "status": "healthy",
-        "database": db_status
+        "database": db_status,
+        "model": _model_label(),
     }
+
+
+def _model_label() -> str:
+    """What the worker will load. Does not download weights."""
+    import os
+
+    if os.getenv("MODEL_URL", "").strip():
+        return "MODEL_URL"
+    repo = os.getenv("HF_MODEL_REPO", "").strip()
+    if repo:
+        filename = os.getenv("HF_MODEL_FILENAME", "best.pt").strip() or "best.pt"
+        return f"{repo}/{filename}"
+    name = os.getenv("MODEL_NAME", "").strip()
+    if name:
+        return name
+    return "yolov8n.pt"
 
 
 if __name__ == "__main__":

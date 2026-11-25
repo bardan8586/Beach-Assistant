@@ -2,7 +2,7 @@
 
 The dashboard stays on Vercel. The API is a Docker image that also runs the YOLO worker. Nothing in this repository creates a hosting account or uploads an image. The steps below are what to click after you have accounts.
 
-Weights (`best.pt`) and the Roboflow images are not in git. A host will start, and `/health` will pass, but video analysis needs the weights on disk or `MODEL_NAME` pointing at a file you upload to the machine. Without them the worker falls back to `yolov8s.pt`, which Ultralytics downloads on first use and which only knows the COCO "person" class.
+Weights (`best.pt`) and the Roboflow images are not in git. A host will start, and `/health` will pass, without them. The worker then loads `yolov8n.pt` (COCO person) on first analysis. To use beach weights instead, set `MODEL_URL` to a direct file URL or `HF_MODEL_REPO` (and optional `HF_MODEL_FILENAME`, default `best.pt`). A private model repo also needs `HF_TOKEN` on the Space. `MODEL_NAME=/missing/best.pt` does not crash the process; it falls back to `yolov8n.pt`.
 
 ## What you set everywhere
 
@@ -16,7 +16,12 @@ Weights (`best.pt`) and the Roboflow images are not in git. A host will start, a
 | `INFERENCE_IMGSZ` | API host | `640` matches training. `416` is faster |
 | `FRAME_SKIP` | API host | `2` processes every other frame |
 | `SHOW_WINDOW` | API host | Keep `false` on a server |
-| `MODEL_NAME` | API host | Path to `best.pt` inside the container, if you copied the weights in |
+| `MODEL_URL` | API host | Optional. Direct URL of a `.pt` file. Wins over the other model settings |
+| `HF_MODEL_REPO` | API host | Optional. Hugging Face model repo id, for example `your-user/beach-assistant-weights` |
+| `HF_MODEL_FILENAME` | API host | Optional. File inside that repo. Default `best.pt` |
+| `HF_TOKEN` | API host, secret | Only if `HF_MODEL_REPO` is private. This is not the token used by the GitHub Action |
+| `MODEL_NAME` | API host | Optional. `yolov8n.pt` or a path that exists in the image |
+| `PORT` | API host | Hugging Face listens on 7860. Leave it unset there. Other hosts inject it |
 | `BEACH_DEFAULT_LAT` / `BEACH_DEFAULT_LON` / `BEACH_DEFAULT_LABEL` | API host | Coastal panel location. Defaults to Bondi Beach |
 
 MongoDB Atlas free tier is enough if you want the database. The API already tolerates a refused Mongo connection.
@@ -64,14 +69,60 @@ Render free web services sleep. The first request after sleep can take half a mi
 
 `deploy/fly.toml` asks for 2 GB shared CPU. Fly will not launch until you confirm the app name and payment method in their UI.
 
-## Hugging Face Spaces
+## Hugging Face Spaces (chosen host)
 
-1. New Space → Docker SDK → public or private.
-2. The Space Dockerfile must be at the Space root. This repo's Dockerfile is already at the root, so you can push the same tree.
-3. Space settings → hardware: CPU Basic (2 vCPU, 16 GB) is the smallest that can load torch and YOLO. The free CPU upgrade is often too small and will be OOM-killed. Do not pick a GPU unless you intend to pay for it.
-4. Settings → Variables: `ENABLE_POSE=false`, `SHOW_WINDOW=false`, `ALLOWED_ORIGINS=https://beach-assistant-preview.vercel.app`.
-5. The Space URL is `https://<user>-beach-assistant.hf.space`. WebSockets on Spaces work on the same host with `wss://`.
-6. Put those two URLs into Vercel and redeploy.
+The Space files live in `deploy/huggingface/`. The GitHub README stays a normal project README. `deploy/huggingface/README.md` is what becomes the Space README (`sdk: docker`, `app_port: 7860`, `suggested_hardware: cpu-basic`). The sync script copies it to the Space root together with the root `Dockerfile`, `backend/`, and `ai/`.
+
+The image listens on `$PORT`, and the default is **7860**. Do not set `PORT=8000` on the Space.
+
+### Settings to use
+
+| Setting | Value |
+|---|---|
+| SDK | Docker |
+| Hardware | CPU basic (`cpu-basic`: 2 vCPU, 16 GB RAM, no hourly charge) |
+| Visibility | Public, unless you want the API private |
+| `ALLOWED_ORIGINS` | `https://beach-assistant-preview.vercel.app` (variable; also the code default) |
+| `ENABLE_POSE` | `false` |
+| `SHOW_WINDOW` | `false` |
+| `FRAME_SKIP` | `2` |
+| `INFERENCE_IMGSZ` | `640` (set `416` if analysis is too slow) |
+| `PORT` | leave unset |
+| `MONGODB_URL` | leave unset unless you have Atlas. Unset still serves `/health`, uploads, and WebSockets |
+| `MODEL_URL` or `HF_MODEL_REPO` | leave unset until you have beach weights. The worker uses `yolov8n.pt` |
+| Secret `HF_TOKEN` on the Space | only for a private model repo |
+
+Hugging Face currently requires a PRO plan (personal) or a Team/Enterprise org to **create** a Docker Space, even on CPU basic, which itself has no hourly price. A 402 from the Hub means that plan check, not a GPU charge. CPU basic still sleeps when idle.
+
+### Create the Space and push this repo
+
+1. https://huggingface.co/new-space → name `beach-assistant` → SDK **Docker** → hardware **CPU basic** → create.
+2. Settings → Variables → add `ALLOWED_ORIGINS` = `https://beach-assistant-preview.vercel.app`. Add the other variables in the table if you want them explicit. Do not put the write token in a public variable.
+3. Create a Hugging Face token with write access: https://huggingface.co/settings/tokens
+4. From a checkout of this branch:
+
+```bash
+pip install "huggingface_hub>=0.23.0"
+export HF_TOKEN=hf_your_write_token
+python deploy/huggingface/sync_space.py YOUR_USER/beach-assistant
+```
+
+`YOUR_USER/beach-assistant` is the Space id. The script creates the Docker Space if it does not exist, then uploads the tree. The running app is `https://YOUR_USER-beach-assistant.hf.space`. Open `/health`.
+
+### Same upload from GitHub Actions
+
+1. GitHub repo → Settings → Secrets and variables → Actions → New repository secret.
+2. Name: `HF_TOKEN`. Value: the same write token. This secret stays on GitHub. It is not uploaded into the Space.
+3. Actions → **sync-huggingface-space** → Run workflow.
+4. Input `space`: `YOUR_USER/beach-assistant`.
+5. Wait until the Space status is Running, then open `https://YOUR_USER-beach-assistant.hf.space/health`.
+
+### Point Vercel at the Space
+
+1. Vercel → beach-assistant-preview → Settings → Environment Variables.
+2. `VITE_API_URL` = `https://YOUR_USER-beach-assistant.hf.space`
+3. `VITE_WS_URL` = `wss://YOUR_USER-beach-assistant.hf.space`
+4. Redeploy the frontend. The dashboard banner should leave Offline after that build.
 
 ## Local Docker check (optional, on your machine)
 
@@ -79,7 +130,7 @@ Render free web services sleep. The first request after sleep can take half a mi
 docker compose up --build
 ```
 
-API on http://localhost:8000 , Mongo on localhost:27017. This build is large because of CPU torch. It was not built in the change that added the file.
+`docker compose` publishes the API on http://localhost:8000 (`PORT=8000`). A plain `docker run -p 7860:7860` uses the image default, which is the Space port. The image was built locally. With no MongoDB running, `GET /health` returned `{"status":"healthy","database":"disconnected","model":"yolov8n.pt"}`. A request with `Origin: https://beach-assistant-preview.vercel.app` received that origin in `access-control-allow-origin`.
 
 ## After it is up
 

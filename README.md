@@ -15,7 +15,7 @@ This is a decision-support tool. It does not replace a lifeguard.
 | Dashboard | `frontend/` | React 19, Vite, TypeScript, Zustand, Tailwind |
 | Train / eval | `ai/scripts/` | Remap labels, train, evaluate, benchmark latency |
 
-The recorded training run is `ai/runs/detect/runs-mai600/roboflow_v2_yolov8n_e5/args.yaml`: YOLOv8n, 5 epochs, CPU, batch 8, the 7-name Roboflow set. The report lists validation precision 0.642, recall 0.572, mAP50 0.614, mAP50-95 0.321. Those weights (`best.pt`) and the images under `ai/datasets/` are gitignored, so this checkout cannot repeat that number. Do not treat the recorded table as a new measurement.
+The recorded training run is `ai/runs/detect/runs-mai600/roboflow_v2_yolov8n_e5/args.yaml`: YOLOv8n, 5 epochs, CPU, batch 8, the 7-name Roboflow set. The report lists validation precision 0.642, recall 0.572, mAP50 0.614, mAP50-95 0.321. Those weights (`best.pt`) and the images under `ai/datasets/` are gitignored, so this checkout cannot repeat that number. Do not treat the recorded table as a new measurement. If `best.pt` is missing, the worker loads `yolov8n.pt`. Set `MODEL_URL` or `HF_MODEL_REPO` to point at beach weights instead.
 
 ## Local run
 
@@ -79,7 +79,7 @@ cd frontend && npm run lint && npx tsc -b --pretty false
 
 ## Deploy
 
-The frontend stays on Vercel. The API image is `Dockerfile` (CPU torch, FastAPI, the AI worker). Host notes for Render, Railway, Fly.io, and Hugging Face Spaces, including the clicks and the variables, are in [docs/DEPLOY.md](docs/DEPLOY.md).
+The frontend stays on Vercel. The API image is `Dockerfile` (CPU torch, FastAPI, the AI worker). It listens on `$PORT`, default **7860**, which is what a Hugging Face Docker Space expects. Host notes, including the Space sync script and the GitHub Action, are in [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ```bash
 docker compose up --build   # API on :8000, Mongo on :27017. Large image. Not run in CI.

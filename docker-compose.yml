@@ -6,6 +6,8 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # The image listens on 7860 unless PORT is set. Keep local callers on 8000.
+      PORT: "8000"
       MONGODB_URL: mongodb://mongo:27017
       ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,https://beach-assistant-preview.vercel.app
       ENABLE_POSE: "false"

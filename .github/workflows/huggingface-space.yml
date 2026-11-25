@@ -1,0 +1,29 @@
+name: sync-huggingface-space
+
+# Manual. Add a repository secret named HF_TOKEN (write access to the Space),
+# then Actions → sync-huggingface-space → Run workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      space:
+        description: "Space id, for example your-user/beach-assistant"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Hugging Face hub client
+        run: pip install "huggingface_hub>=0.23.0"
+      - name: Upload the API to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python deploy/huggingface/sync_space.py "${{ inputs.space }}"

@@ -48,22 +48,24 @@ class Database:
             logger.info(f"Connecting to MongoDB at {settings.MONGODB_URL[:20]}...")
             
             # Create async MongoDB client
-            self.client = AsyncIOMotorClient(
+            client = AsyncIOMotorClient(
                 settings.MONGODB_URL,
                 serverSelectionTimeoutMS=5000  # 5 second timeout
             )
             
-            # Get database instance
-            self.database = self.client[settings.DATABASE_NAME]
-            
-            # Test connection
-            await self.client.admin.command('ping')
+            # Test connection before publishing the client. A failed ping must
+            # leave health as disconnected instead of a half-open client.
+            await client.admin.command('ping')
+            self.client = client
+            self.database = client[settings.DATABASE_NAME]
             logger.info(f"✓ Connected to MongoDB database: {settings.DATABASE_NAME}")
             
             # Create indexes for better performance
             await self._create_indexes()
             
         except Exception as e:
+            self.client = None
+            self.database = None
             logger.error(f"✗ Failed to connect to MongoDB: {e}")
             raise
     

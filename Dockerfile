@@ -23,16 +23,25 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY backend /app/backend
 COPY ai /app/ai
 
+# Hugging Face Docker Spaces route to port 7860 and run as uid 1000.
+# Render, Railway, and Fly inject PORT and override this default.
 ENV PYTHONUNBUFFERED=1 \
     ENABLE_POSE=false \
     SHOW_WINDOW=false \
     FRAME_SKIP=2 \
     INFERENCE_IMGSZ=640 \
-    MONGODB_URL=mongodb://localhost:27017 \
-    PORT=8000
+    MONGODB_URL=mongodb://127.0.0.1:27017 \
+    PORT=7860 \
+    HOME=/home/user \
+    YOLO_CONFIG_DIR=/home/user/.config/Ultralytics \
+    HF_HOME=/home/user/.cache/huggingface
 
+RUN useradd -m -u 1000 user \
+    && mkdir -p /app/backend/uploads /app/ai/models/cache /home/user/.config /home/user/.cache \
+    && chown -R user:user /app /home/user
+
+USER user
 WORKDIR /app/backend
-EXPOSE 8000
+EXPOSE 7860
 
-# Hosts such as Render and Railway inject PORT.
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-7860}"]
