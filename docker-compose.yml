@@ -1,0 +1,19 @@
+# Local API + Mongo. The image includes CPU PyTorch and is large.
+# Frontend stays on the Vite dev server or on Vercel; it is not in this file.
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      MONGODB_URL: mongodb://mongo:27017
+      ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,https://beach-assistant-preview.vercel.app
+      ENABLE_POSE: "false"
+      SHOW_WINDOW: "false"
+      FRAME_SKIP: "2"
+    depends_on:
+      - mongo
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"

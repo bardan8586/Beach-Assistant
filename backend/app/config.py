@@ -11,8 +11,23 @@ Why Pydantic Settings?
 - Automatic .env file loading
 """
 
-from pydantic_settings import BaseSettings
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List, Optional
+
+
+def parse_allowed_origins(value):
+    """Accept a JSON list or a comma-separated origin string from the environment."""
+    if value is None:
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        if text.startswith("["):
+            return value
+        return [origin.strip() for origin in text.split(",") if origin.strip()]
+    return value
 
 
 class Settings(BaseSettings):
@@ -45,7 +60,13 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5174",
         "http://127.0.0.1:5175",
         "http://127.0.0.1:5176",
+        "https://beach-assistant-preview.vercel.app",
     ]
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def _split_origins(cls, value):
+        return parse_allowed_origins(value)
     
     # -------------------- WebSocket Configuration --------------------
     WS_HEARTBEAT_INTERVAL: int = 30  # seconds between heartbeat pings
@@ -90,12 +111,12 @@ class Settings(BaseSettings):
 
     # Video upload cap (bytes). Enforced in /api/video/upload while streaming the body.
     MAX_UPLOAD_VIDEO_BYTES: int = 50 * 1024 * 1024  # 50 MB default
-    
-    class Config:
-        """Pydantic configuration"""
-        env_file = ".env"  # Load from .env file if it exists
-        case_sensitive = False  # Environment variables are case-insensitive
-        extra = "ignore"  # Ignore unrelated env vars instead of failing startup
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
 
 # Global settings instance

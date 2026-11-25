@@ -24,7 +24,9 @@ class AudioAlertService {
   
   private initialize() {
     if (!this.audioContext) {
-      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const Ctx = window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+      if (!Ctx) return
+      this.audioContext = new Ctx()
     }
   }
   

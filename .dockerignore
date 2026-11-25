@@ -1,0 +1,15 @@
+.git
+frontend/node_modules
+frontend/dist
+**/__pycache__
+**/*.pyc
+**/.venv
+**/venv
+ai/datasets
+ai/runs
+backend/uploads
+tests/data
+*.mp4
+*.mov
+.env
+**/.env

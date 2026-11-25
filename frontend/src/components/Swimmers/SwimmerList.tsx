@@ -20,18 +20,18 @@ function bboxForDisplay(bbox: BoundingBox): { x1: number; y1: number; x2: number
   return { x1: x, y1: y, x2: x + w, y2: y + h }
 }
 
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60)
-  const secs = Math.floor(seconds % 60)
-  return `${mins}:${secs.toString().padStart(2, '0')}`
+function riskTone(level?: string, score?: number): 'high' | 'medium' | 'low' {
+  const normalized = (level || '').toLowerCase()
+  if (normalized === 'high' || normalized === 'critical' || (score ?? 0) >= 70) return 'high'
+  if (normalized === 'medium' || (score ?? 0) >= 40) return 'medium'
+  return 'low'
 }
 
-function calculateTimeInView(firstSeen: string, lastSeen: string): string {
-  const first = new Date(firstSeen).getTime()
-  const last = new Date(lastSeen).getTime()
-  const seconds = (last - first) / 1000
-  return formatTime(seconds)
-}
+const RISK_CLASS = {
+  high: 'bg-red-500/15 text-red-200 ring-red-500/40',
+  medium: 'bg-amber-500/15 text-amber-100 ring-amber-400/40',
+  low: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30',
+} as const
 
 export default function SwimmerList({ swimmers }: SwimmerListProps) {
   if (swimmers.length === 0) {
@@ -66,10 +66,11 @@ export default function SwimmerList({ swimmers }: SwimmerListProps) {
           <thead>
             <tr>
               <th className="px-5 py-3 text-left sm:px-6">Track</th>
-              <th className="px-5 py-3 text-left sm:px-6">BBox</th>
+              <th className="px-5 py-3 text-left sm:px-6">Class</th>
+              <th className="px-5 py-3 text-left sm:px-6">Risk</th>
+              <th className="px-5 py-3 text-left sm:px-6">Zone</th>
+              <th className="hidden px-5 py-3 text-left md:table-cell sm:px-6">BBox</th>
               <th className="px-5 py-3 text-left sm:px-6">Confidence</th>
-              <th className="px-5 py-3 text-left sm:px-6">In view</th>
-              <th className="px-5 py-3 text-left sm:px-6">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -82,19 +83,23 @@ export default function SwimmerList({ swimmers }: SwimmerListProps) {
                     <span className="mr-2 inline-block h-2 w-2 rounded-full align-middle" style={{ backgroundColor: color }} />
                     {swimmer.track_id}
                   </td>
-                  <td className="px-5 py-3.5 font-mono text-xs text-slate-500 sm:px-6">
+                  <td className="px-5 py-3.5 text-xs capitalize text-slate-300 sm:px-6">
+                    {(swimmer.detection_class || '—').replaceAll('_', ' ')}
+                  </td>
+                  <td className="px-5 py-3.5 sm:px-6">
+                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${RISK_CLASS[riskTone(swimmer.risk_level, swimmer.risk_score)]}`}>
+                      {swimmer.risk_score != null ? Math.round(swimmer.risk_score) : '—'}
+                      {swimmer.risk_level ? ` ${swimmer.risk_level}` : ''}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3.5 text-xs uppercase text-slate-400 sm:px-6">
+                    {swimmer.zone || '—'}
+                  </td>
+                  <td className="hidden px-5 py-3.5 font-mono text-xs text-slate-500 md:table-cell sm:px-6">
                     {x1},{y1} → {x2},{y2}
                   </td>
                   <td className="px-5 py-3.5 font-medium text-slate-200 sm:px-6">
                     {((swimmer.confidence ?? 0) * 100).toFixed(1)}%
-                  </td>
-                  <td className="px-5 py-3.5 font-mono text-xs text-slate-500 sm:px-6">
-                    {calculateTimeInView(swimmer.first_seen, swimmer.last_seen)}
-                  </td>
-                  <td className="px-5 py-3.5 sm:px-6">
-                    <span className="inline-flex rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
-                      {swimmer.status ?? 'active'}
-                    </span>
                   </td>
                 </tr>
               )

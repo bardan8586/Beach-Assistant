@@ -42,6 +42,17 @@ CONF_THRESHOLD = float(os.getenv("CONF_THRESHOLD", "0.5"))
 # IOU threshold for non-maximum suppression
 IOU_THRESHOLD = float(os.getenv("IOU_THRESHOLD", "0.5"))
 
+# Inference input size. 640 matches training. 480 or 416 is faster on CPU
+# and is an accuracy tradeoff — measure with ai/scripts/benchmark_inference.py
+# and ai/scripts/evaluate.py before changing the default.
+INFERENCE_IMGSZ = int(os.getenv("INFERENCE_IMGSZ", "640"))
+
+# auto: half precision only on CUDA. true/false force the flag (CUDA only).
+HALF_PRECISION = os.getenv("HALF_PRECISION", "auto").lower()
+
+# Pose runs a second model and is off unless explicitly enabled.
+ENABLE_POSE = os.getenv("ENABLE_POSE", "false").lower() == "true"
+
 # ===== Roboflow Configuration (only used if DETECTOR_TYPE="roboflow") =====
 ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY", "")
 ROBOFLOW_MODEL_ID = os.getenv("ROBOFLOW_MODEL_ID", "")  # e.g., "swimmer-detection/1"
@@ -62,8 +73,11 @@ WATER_ZONE_RATIO = float(os.getenv("WATER_ZONE_RATIO", "0.8"))  # 80% from botto
 # Maximum time (seconds) without detection before removing a track
 MAX_STALENESS = float(os.getenv("MAX_STALENESS", "1.0"))
 
-# IOU threshold for track-to-detection association
-TRACKER_IOU_THRESHOLD = float(os.getenv("TRACKER_IOU_THRESHOLD", "0.2"))
+# Norfair distance threshold. The tracker returns 1 - IoU, so this is the
+# maximum 1-IoU still accepted as the same person.
+# 0.70 means IoU >= 0.30. The old default of 0.2 required IoU >= 0.8, which
+# breaks IDs when FRAME_SKIP lets a swimmer move between processed frames.
+TRACKER_IOU_THRESHOLD = float(os.getenv("TRACKER_IOU_THRESHOLD", "0.70"))
 
 # ===== Video Input Configuration =====
 # Default video source (can be overridden via command line argument)

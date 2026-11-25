@@ -1,16 +1,16 @@
 /**
  * WebSocket Hook
  * ==============
- * Custom React hook for WebSocket connection
+ * Connects to the live feed and reconnects with exponential backoff.
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { WS_URL, WS_RECONNECT_INTERVAL } from '../utils/constants'
+import { WS_URL, WS_RECONNECT_BASE_MS, WS_RECONNECT_MAX_MS } from '../utils/constants'
 import type { FrameResult, SwimmerData, AlertData } from '../types/frameResult'
 
 /** Backend may send full FrameResult (swimmers, alerts) or legacy { type, data, camera_id } */
 export interface WebSocketMessage {
-  type?: 'swimmers' | 'alert' | 'heatmap' | 'frame_result'
+  type?: 'swimmers' | 'alert' | 'heatmap' | 'frame_result' | 'connected'
   data?: unknown
   frame_result?: FrameResult
   timestamp?: number | string
@@ -19,6 +19,8 @@ export interface WebSocketMessage {
   swimmers?: SwimmerData[]
   alerts?: AlertData[]
 }
+
+export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'offline'
 
 interface UseWebSocketOptions {
   cameraId: string
@@ -31,108 +33,128 @@ export function useWebSocket({
   onMessage,
   autoConnect = true,
 }: UseWebSocketOptions) {
-  const [isConnected, setIsConnected] = useState(false)
+  const [connectionState, setConnectionState] = useState<ConnectionState>('idle')
   const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<number | undefined>(undefined)
+  const heartbeatRef = useRef<number | undefined>(undefined)
+  const attemptRef = useRef(0)
+  const generationRef = useRef(0)
+  const onMessageRef = useRef(onMessage)
+  onMessageRef.current = onMessage
 
-  const connect = () => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      console.log('WebSocket already connected')
-      return // Already connected
-    }
-
-    // Close existing connection if any
-    if (wsRef.current) {
-      wsRef.current.close()
-      wsRef.current = null
-    }
-
-    try {
-      const wsUrl = `${WS_URL}/ws/feed?camera_id=${cameraId || 'all'}`
-      console.log(`🔌 Connecting to WebSocket: ${wsUrl}`)
-      const ws = new WebSocket(wsUrl)
-
-      ws.onopen = () => {
-        console.log('✅ WebSocket connected successfully')
-        setIsConnected(true)
-      }
-
-      ws.onmessage = (event) => {
-        try {
-          const message: WebSocketMessage = JSON.parse(event.data)
-          console.log('📨 WebSocket message received:', message.type)
-          setLastMessage(message)
-          if (onMessage) {
-            onMessage(message)
-          }
-        } catch (error) {
-          console.error('❌ Failed to parse WebSocket message:', error, event.data)
-        }
-      }
-
-      ws.onerror = (error) => {
-        console.error('❌ WebSocket error event:', error)
-        console.error('   URL:', wsUrl)
-        console.error('   ReadyState:', ws.readyState)
-        setIsConnected(false)
-      }
-
-      ws.onclose = (event) => {
-        console.log(`🔌 WebSocket disconnected (code: ${event.code}, reason: ${event.reason || 'none'})`)
-        setIsConnected(false)
-        
-        // Only auto-reconnect if not a normal closure
-        if (event.code !== 1000) {
-          reconnectTimeoutRef.current = window.setTimeout(() => {
-            console.log('🔄 Attempting to reconnect...')
-            connect()
-          }, WS_RECONNECT_INTERVAL)
-        }
-      }
-
-      wsRef.current = ws
-    } catch (error) {
-      console.error('❌ Failed to create WebSocket:', error)
-      setIsConnected(false)
-    }
-  }
-
-  const disconnect = () => {
+  const clearTimers = () => {
     if (reconnectTimeoutRef.current) {
       window.clearTimeout(reconnectTimeoutRef.current)
       reconnectTimeoutRef.current = undefined
     }
+    if (heartbeatRef.current) {
+      window.clearInterval(heartbeatRef.current)
+      heartbeatRef.current = undefined
+    }
+  }
+
+  const connect = () => {
+    const generation = ++generationRef.current
+    clearTimers()
+
     if (wsRef.current) {
+      wsRef.current.onclose = null
+      wsRef.current.close()
+      wsRef.current = null
+    }
+
+    setConnectionState(attemptRef.current > 0 ? 'reconnecting' : 'connecting')
+
+    try {
+      const wsUrl = `${WS_URL}/ws/feed?camera_id=${encodeURIComponent(cameraId || 'all')}`
+      const ws = new WebSocket(wsUrl)
+
+      ws.onopen = () => {
+        if (generation !== generationRef.current) return
+        attemptRef.current = 0
+        setConnectionState('connected')
+        heartbeatRef.current = window.setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send('ping')
+          }
+        }, 25000)
+      }
+
+      ws.onmessage = (event) => {
+        if (generation !== generationRef.current) return
+        if (event.data === 'pong') return
+        try {
+          const message: WebSocketMessage = JSON.parse(event.data)
+          setLastMessage(message)
+          onMessageRef.current?.(message)
+        } catch (error) {
+          console.error('Failed to parse WebSocket message:', error)
+        }
+      }
+
+      ws.onerror = () => {
+        if (generation !== generationRef.current) return
+        setConnectionState('reconnecting')
+      }
+
+      ws.onclose = (event) => {
+        if (generation !== generationRef.current) return
+        setConnectionState('offline')
+        if (heartbeatRef.current) {
+          window.clearInterval(heartbeatRef.current)
+          heartbeatRef.current = undefined
+        }
+        if (event.code === 1000) return
+        const delay = Math.min(
+          WS_RECONNECT_MAX_MS,
+          WS_RECONNECT_BASE_MS * 2 ** attemptRef.current,
+        )
+        attemptRef.current += 1
+        reconnectTimeoutRef.current = window.setTimeout(() => {
+          connect()
+        }, delay)
+      }
+
+      wsRef.current = ws
+    } catch (error) {
+      console.error('Failed to create WebSocket:', error)
+      setConnectionState('offline')
+    }
+  }
+
+  const disconnect = () => {
+    generationRef.current += 1
+    attemptRef.current = 0
+    clearTimers()
+    if (wsRef.current) {
+      wsRef.current.onclose = null
       wsRef.current.close(1000, 'Manual disconnect')
       wsRef.current = null
     }
-    setIsConnected(false)
+    setConnectionState('offline')
   }
 
   useEffect(() => {
-    if (autoConnect && cameraId) {
-      // Small delay to ensure previous connection is closed
-      const timeoutId = setTimeout(() => {
-        connect()
-      }, 100)
-      
-      return () => {
-        clearTimeout(timeoutId)
-        disconnect()
-      }
+    if (!autoConnect || !cameraId) {
+      return
     }
-    
+    const timeoutId = window.setTimeout(() => {
+      connect()
+    }, 100)
     return () => {
+      window.clearTimeout(timeoutId)
       disconnect()
     }
+    // connect/disconnect close over refs; cameraId is the subscription key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cameraId, autoConnect])
 
   return {
-    isConnected,
+    isConnected: connectionState === 'connected',
+    connectionState,
     lastMessage,
     connect,
     disconnect,
   }
 }
-

@@ -3,7 +3,8 @@ import os
 import cv2
 import base64
 import requests
-import json
+
+from classes import canonicalize_class, is_target_class
 
 class Detector:
     """
@@ -67,12 +68,29 @@ class Detector:
         print(f"Loading YOLOv8 model: {model_path} on {device}")
         self.model = YOLO(model_path)
         self.model.to(device)
+        self.imgsz = int(os.getenv("INFERENCE_IMGSZ", "640"))
+        self.half = self._resolve_half(device)
+        if os.getenv("FUSE_MODEL", "true").lower() == "true" and not str(model_path).endswith(".onnx"):
+            try:
+                self.model.fuse()
+            except Exception as fuse_error:
+                print(f"Model fuse skipped: {fuse_error}")
         # Detect custom (fine-tuned) model: not 80-class COCO
         self._is_custom_model = getattr(self.model.model, "nc", 80) != 80
         if self._is_custom_model:
             print(f"✅ Fine-tuned model loaded (nc={getattr(self.model.model, 'nc', '?')}) – using all classes for detection")
         else:
             print(f"✅ YOLOv8 model loaded successfully")
+
+    @staticmethod
+    def _resolve_half(device: str) -> bool:
+        """Half precision is a CUDA path. CPU half is rejected by PyTorch here."""
+        flag = os.getenv("HALF_PRECISION", "auto").lower()
+        if device != "cuda" and not str(device).startswith("cuda"):
+            return False
+        if flag == "false":
+            return False
+        return True
     
     def _init_pose_model(self, device: Optional[str]):
         """Initialize YOLOv8-Pose model for body keypoint detection."""
@@ -182,13 +200,14 @@ class Detector:
         """Run YOLOv8 detection. For COCO models uses class 0 (person); for fine-tuned models uses all classes."""
         try:
             if imgsz is None:
-                imgsz = 640
+                imgsz = getattr(self, "imgsz", 640)
             kwargs = dict(
                 conf=conf_thres,
                 iou=iou_thres,
                 verbose=False,
                 device=self.model.device,
                 imgsz=imgsz,
+                half=bool(getattr(self, "half", False)),
             )
             if getattr(self, "_is_custom_model", False):
                 # Fine-tuned model (e.g. Roboflow drowning): all classes are person-related
@@ -207,7 +226,7 @@ class Detector:
                 if not getattr(self, "_is_custom_model", False) and int(cls) != 0:
                     continue
                 x1, y1, x2, y2 = map(int, box)
-                class_name = names.get(int(cls), "person")
+                class_name = canonicalize_class(names.get(int(cls), "person"))
                 detections.append((x1, y1, x2, y2, float(conf), class_name))
             return detections
         except Exception as e:
@@ -239,12 +258,12 @@ class Detector:
             # Parse Roboflow response
             # Roboflow returns: {"predictions": [{"x": center_x, "y": center_y, "width": w, "height": h, "confidence": conf, "class": class_name}, ...]}
             for pred in result.get("predictions", []):
-                # Filter for person/swimmer class
-                class_name = pred.get("class", "").lower()
-                if "person" in class_name or "swimmer" in class_name or "people" in class_name:
-                    conf = float(pred.get("confidence", 0))
-                    if conf < conf_thres:
-                        continue
+                raw_name = pred.get("class", "")
+                if not is_target_class(raw_name):
+                    continue
+                class_name = canonicalize_class(raw_name)
+                conf = float(pred.get("confidence", 0))
+                if conf >= conf_thres:
                     
                     # Convert center+size to x1,y1,x2,y2
                     center_x = float(pred["x"])
@@ -257,7 +276,7 @@ class Detector:
                     x2 = int(center_x + width / 2)
                     y2 = int(center_y + height / 2)
                     
-                    detections.append((x1, y1, x2, y2, conf))
+                    detections.append((x1, y1, x2, y2, conf, class_name))
             
             return detections
         

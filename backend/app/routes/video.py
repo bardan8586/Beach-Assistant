@@ -17,6 +17,7 @@ import cv2
 import json
 from typing import Optional
 from app.utils import results_storage
+from app.utils.uploads import safe_video_suffix, video_upload_error
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,10 @@ async def upload_video(file: UploadFile = File(...)):
         - video_path: Path where video is stored
     """
     try:
+        upload_error = video_upload_error(file.filename, file.content_type)
+        if upload_error:
+            raise HTTPException(status_code=400, detail={"error": "invalid_upload", "message": upload_error})
+
         # Generate unique video ID
         video_id = str(uuid.uuid4())
 
@@ -124,7 +129,7 @@ async def upload_video(file: UploadFile = File(...)):
         video_dir = results_storage.create_video_directory(video_id)
 
         # Save video file in the video directory
-        file_extension = Path(file.filename).suffix or ".mp4"
+        file_extension = safe_video_suffix(file.filename or "video.mp4")
         video_filename = f"video{file_extension}"
         video_path = video_dir / video_filename
 
@@ -265,6 +270,7 @@ async def process_video(video_id: str, camera_id: Optional[str] = None, show_win
         # If enabled, the AI subprocess will open a local OpenCV window (cv2.imshow).
         # Note: this only appears on the machine running the backend/AI with a GUI session.
         env["SHOW_WINDOW"] = "true" if show_window else "false"
+        env["PYTHONUNBUFFERED"] = "1"
         
         # Use AI venv Python if it exists (has torch/ultralytics); else system python3
         ai_venv_python = project_root / "ai" / "venv" / "bin" / "python"
@@ -309,17 +315,17 @@ async def process_video(video_id: str, camera_id: Optional[str] = None, show_win
             cwd=str(project_root / "ai")  # Run from ai directory
         )
 
-        def log_ai_stderr():
-            """Read AI subprocess stderr and log so we see crashes/errors in backend terminal."""
+        def log_ai_stream(stream, label: str):
+            """Drain a pipe so the AI process cannot block when the buffer fills."""
             try:
-                for line in iter(process.stderr.readline, b""):
+                for line in iter(stream.readline, b""):
                     if line:
-                        logger.info("[AI] %s", line.decode("utf-8", errors="replace").rstrip())
+                        logger.info("[%s] %s", label, line.decode("utf-8", errors="replace").rstrip())
             except Exception as e:
-                logger.debug("AI stderr reader stopped: %s", e)
+                logger.debug("AI %s reader stopped: %s", label, e)
 
-        t = threading.Thread(target=log_ai_stderr, daemon=True)
-        t.start()
+        threading.Thread(target=log_ai_stream, args=(process.stdout, "AI"), daemon=True).start()
+        threading.Thread(target=log_ai_stream, args=(process.stderr, "AI"), daemon=True).start()
 
         processing_jobs[video_id] = {
             "process": process,

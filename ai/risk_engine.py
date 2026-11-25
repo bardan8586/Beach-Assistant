@@ -18,6 +18,7 @@ import time
 
 from water_analyzer import WaterZone
 from behavior_analyzer import MovementPattern, MotionMetrics
+from classes import apply_class_floor
 
 
 class RiskLevel(Enum):
@@ -87,7 +88,9 @@ class RiskEngine:
         motion_metrics: MotionMetrics,
         distance_from_shore: float,
         timestamp: float,
-        pose_risk_override: Optional[float] = None  # NEW: Pose-based drowning risk
+        pose_risk_override: Optional[float] = None,  # Pose-based drowning risk
+        detection_class: Optional[str] = None,
+        detection_confidence: float = 1.0,
     ) -> RiskScore:
         """
         Calculate risk score for a swimmer.
@@ -99,18 +102,26 @@ class RiskEngine:
             distance_from_shore: Distance from shore in pixels
             timestamp: Current timestamp
             pose_risk_override: If provided, use this as primary risk score (drowning detection)
+            detection_class: Canonical detector label (drowning, swimming, out_of_water, person)
+            detection_confidence: Confidence of that label, used to scale the class floor
             
         Returns:
             RiskScore object
         """
         factors = {}
         total_score = 0.0
+        _class_score, class_factor, class_floor = apply_class_floor(
+            0.0, detection_class, detection_confidence
+        )
         
-        # 🚨 PRIORITY: Pose-based drowning detection (overrides other factors)
+        # Pose-based drowning detection takes priority, then the detector label floor.
         if pose_risk_override is not None and pose_risk_override > 50:
             # HIGH CONFIDENCE drowning behavior detected from pose
             factors["pose_drowning_detection"] = pose_risk_override
             total_score = pose_risk_override
+            if class_factor and class_floor > total_score:
+                factors[class_factor] = class_floor
+                total_score = class_floor
             
             # Determine risk level
             if total_score >= 90:
@@ -177,6 +188,13 @@ class RiskEngine:
             factors["time_in_water"] = time_score
             total_score += time_score
         
+        if class_factor and class_floor > 0:
+            factors[class_factor] = class_floor
+            if class_factor == "detection_class_drowning":
+                total_score = max(total_score, class_floor)
+            else:
+                total_score += class_floor
+
         # Cap total score at 100
         total_score = min(total_score, 100.0)
         

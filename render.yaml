@@ -1,0 +1,28 @@
+# Render Blueprint. Connecting the repo does not deploy until you confirm it
+# in the Render dashboard. The free instance has too little RAM to load YOLO;
+# use a paid instance with at least 2 GB, or run the API only and keep
+# inference on a machine that already has the weights.
+services:
+  - type: web
+    name: beach-assistant-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: ENABLE_POSE
+        value: "false"
+      - key: SHOW_WINDOW
+        value: "false"
+      - key: MONGODB_URL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        value: https://beach-assistant-preview.vercel.app
+      - key: BEACH_DEFAULT_LAT
+        value: "-33.890842"
+      - key: BEACH_DEFAULT_LON
+        value: "151.274291"
+      - key: BEACH_DEFAULT_LABEL
+        value: Bondi Beach, NSW

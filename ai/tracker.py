@@ -23,6 +23,9 @@ from typing import List, Tuple, Dict, Optional, Any
 import numpy as np
 import time
 
+from boxes import iou_distance
+from classes import canonicalize_class
+
 # Use Norfair's ByteTrack implementation for ease of deployment
 try:
     from norfair import Detection, Tracker, Video, draw_tracked_objects
@@ -74,11 +77,11 @@ class PersonTracker:
         self,
         max_staleness: float = 1.0,        # seconds without detection before removing track
         min_detection_conf: float = 0.2,   # ignores extremely weak boxes (should match detector)
-        iou_threshold: float = 0.2,        # box association IOU
+        iou_threshold: float = 0.70,       # max 1-IoU; 0.70 accepts IoU >= 0.30
     ):
         """
         max_staleness: after how many seconds with no detection do we delete a track?
-        iou_threshold: ByteTrack track-to-box association; lower=harder to match
+        iou_threshold: max 1-IoU for a match. 0.70 accepts IoU >= 0.30. Lower is stricter.
         """
         self.min_detection_conf = min_detection_conf
         self.iou_threshold = iou_threshold
@@ -111,24 +114,9 @@ class PersonTracker:
         Computes 1-IOU (for minimization) between detection and tracker.
         Norfair expects distance_function to return low values for *closer* objects.
         """
-        # Each norfair Detection/tracker stores (x1, y1, x2, y2) in .data["bbox"]
         box_a = detection.data["bbox"]
         box_b = tracked_object.last_detection.data["bbox"]
-        # Calculate intersection-over-union
-        xA = max(box_a[0], box_b[0])
-        yA = max(box_a[1], box_b[1])
-        xB = min(box_a[2], box_b[2])
-        yB = min(box_a[3], box_b[3])
-        interW = max(0, xB - xA)
-        interH = max(0, yB - yA)
-        interArea = interW * interH
-        areaA = (box_a[2] - box_a[0]) * (box_a[3] - box_a[1])
-        areaB = (box_b[2] - box_b[0]) * (box_b[3] - box_b[1])
-        unionArea = areaA + areaB - interArea
-        if unionArea == 0:
-            return 1.0  # far
-        iou = interArea / unionArea
-        return 1 - iou  # want small distances to mean better match
+        return iou_distance(box_a, box_b)
 
     def update(
         self,
@@ -146,7 +134,7 @@ class PersonTracker:
         norfair_detections = []
         for det in detections:
             x1, y1, x2, y2, conf = det[0], det[1], det[2], det[3], det[4]
-            class_name = det[5] if len(det) > 5 else "person"
+            class_name = canonicalize_class(det[5] if len(det) > 5 else "person")
             if conf < self.min_detection_conf:
                 continue
             points = self._bbox_to_points((x1, y1, x2, y2))

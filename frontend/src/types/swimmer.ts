@@ -26,6 +26,8 @@ export interface Swimmer {
   /** Risk score 0–100 from AI */
   risk_score?: number;
   risk_level?: string;
+  /** Canonical detector label: drowning, swimming, out_of_water, person */
+  detection_class?: string;
   behavior?: string;
   zone?: string;
   time_in_water?: number;

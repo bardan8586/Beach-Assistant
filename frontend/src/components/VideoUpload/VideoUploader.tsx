@@ -8,6 +8,8 @@ export type UploadStage = 'idle' | 'selecting' | 'uploading' | 'ready'
 
 interface VideoUploaderProps {
   onVideoSelected: (file: File) => void
+  /** Shown in the page error banner instead of a browser alert. */
+  onReject?: (message: string) => void
   uploadProgress?: number      // 0-100, driven by parent during upload
   stage?: UploadStage          // external state (set by parent App)
   statusMessage?: string       // short sublabel e.g. "Uploading 42%"
@@ -23,6 +25,7 @@ function formatBytes(bytes: number): string {
 
 export default function VideoUploader({
   onVideoSelected,
+  onReject,
   uploadProgress = 0,
   stage = 'idle',
   statusMessage,
@@ -35,19 +38,23 @@ export default function VideoUploader({
   const handleFile = useCallback(
     (file: File | undefined) => {
       if (!file) return
-      if (!file.type.startsWith('video/')) {
-        alert('Please select a video file (MP4, MOV, AVI, MKV).')
+      const reject = (message: string) => {
+        if (onReject) onReject(message)
+        else window.alert(message)
+      }
+      if (file.type && !file.type.startsWith('video/') && file.type !== 'application/octet-stream') {
+        reject('Choose a video file (MP4, MOV, AVI, MKV, or WebM).')
         return
       }
       if (maxUploadBytes != null && file.size > maxUploadBytes) {
         const mb = Math.max(1, Math.round(maxUploadBytes / (1024 * 1024)))
-        alert(`This file is over the ${mb} MB limit. Choose a shorter or more compressed video.`)
+        reject(`This file is over the ${mb} MB limit. Choose a shorter or more compressed video.`)
         return
       }
       setSelectedFile(file)
       onVideoSelected(file)
     },
-    [onVideoSelected, maxUploadBytes],
+    [onVideoSelected, onReject, maxUploadBytes],
   )
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {

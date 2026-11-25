@@ -34,49 +34,11 @@ export default function PriorityDashboard({
   // Initialize audio context
   useEffect(() => {
     if (audioEnabled && !audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const Ctx = window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+      if (!Ctx) return
+      audioContextRef.current = new Ctx()
     }
   }, [audioEnabled])
-  
-  // Speak new alerts
-  useEffect(() => {
-    if (!audioEnabled || !('speechSynthesis' in window)) return
-    
-    // Find new unacknowledged emergency/alert level alerts
-    const urgentAlerts = alerts.filter(
-      a => !a.acknowledged && 
-           (a.level === 'emergency' || a.level === 'alert') &&
-           !spokenAlerts.has(a.alert_id)
-    )
-    
-    urgentAlerts.forEach(alert => {
-      speakAlert(alert)
-      setSpokenAlerts(prev => new Set([...prev, alert.alert_id]))
-    })
-  }, [alerts, audioEnabled, spokenAlerts])
-  
-  const speakAlert = (alert: AlertData) => {
-    // Play attention sound first
-    playAlertSound(alert.level)
-    
-    // Then speak the alert
-    setTimeout(() => {
-      const utterance = new SpeechSynthesisUtterance()
-      
-      if (alert.level === 'emergency') {
-        utterance.text = `Emergency! Swimmer ${alert.swimmer_id}, ${alert.zone} zone. ${alert.action_recommended}`
-        utterance.rate = 1.1
-        utterance.pitch = 1.2
-        utterance.volume = 1.0
-      } else {
-        utterance.text = `Alert: Swimmer ${alert.swimmer_id}, ${alert.zone} zone. Monitor closely.`
-        utterance.rate = 1.0
-        utterance.volume = 0.9
-      }
-      
-      window.speechSynthesis.speak(utterance)
-    }, 500)
-  }
   
   const playAlertSound = (level: string) => {
     if (!audioContextRef.current) return
@@ -125,6 +87,43 @@ export default function PriorityDashboard({
       oscillator.stop(ctx.currentTime + 0.2)
     }
   }
+
+  const speakAlert = (alert: AlertData) => {
+    playAlertSound(alert.level)
+    window.setTimeout(() => {
+      const utterance = new SpeechSynthesisUtterance()
+      if (alert.level === 'emergency') {
+        utterance.text = `Emergency! Swimmer ${alert.swimmer_id}, ${alert.zone} zone. ${alert.action_recommended}`
+        utterance.rate = 1.1
+        utterance.pitch = 1.2
+        utterance.volume = 1.0
+      } else {
+        utterance.text = `Alert: Swimmer ${alert.swimmer_id}, ${alert.zone} zone. Monitor closely.`
+        utterance.rate = 1.0
+        utterance.volume = 0.9
+      }
+      window.speechSynthesis.speak(utterance)
+    }, 500)
+  }
+
+  useEffect(() => {
+    if (!audioEnabled || !('speechSynthesis' in window)) return
+    const urgentAlerts = alerts.filter(
+      (alert) =>
+        !alert.acknowledged &&
+        (alert.level === 'emergency' || alert.level === 'alert') &&
+        !spokenAlerts.has(alert.alert_id),
+    )
+    if (urgentAlerts.length === 0) return
+    urgentAlerts.forEach((alert) => speakAlert(alert))
+    setSpokenAlerts((prev) => {
+      const next = new Set(prev)
+      urgentAlerts.forEach((alert) => next.add(alert.alert_id))
+      return next
+    })
+    // speakAlert is recreated each render and only uses refs plus speechSynthesis.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alerts, audioEnabled, spokenAlerts])
   
   const getLevelColor = (level: string) => {
     switch (level) {

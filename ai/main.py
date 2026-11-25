@@ -17,8 +17,6 @@ import cv2
 import time
 import csv
 import os
-import requests
-import json
 import numpy as np
 
 # --- Import pipeline components ---
@@ -39,7 +37,9 @@ from pose_analyzer import PoseAnalyzer, SwimmingAction  # Pose-based drowning de
 from advanced_tracker import AdvancedTracker  # Robust tracking for ocean conditions
 from temporal_analyzer import TemporalAnalyzer, SwimmerState  # Fatigue & panic progression
 from beach_calibration import BeachCalibration  # Learn beach-specific patterns
-from alert_engine import AlertEngine, AlertLevel  # NEW: Intelligent alert system with hysteresis
+from alert_engine import AlertEngine, AlertLevel  # Intelligent alert system with hysteresis
+from classes import apply_class_floor
+from ingest_client import AsyncIngestClient
 
 # --------- Configurations ---------
 # For testing: use the test video (CLI path, or first video in tests/data)
@@ -86,11 +86,19 @@ SHOW_WINDOW = os.getenv("SHOW_WINDOW", "false").lower() == "true"  # Disable Ope
 
 # --- Initialize modules ---
 # Use config so we default to fine-tuned best.pt when it exists (assessment / production)
-from config import DETECTOR_TYPE, MODEL_NAME
+from config import (
+    DETECTOR_TYPE,
+    MODEL_NAME,
+    CONF_THRESHOLD,
+    IOU_THRESHOLD,
+    INFERENCE_IMGSZ,
+    TRACKER_IOU_THRESHOLD,
+    MAX_STALENESS,
+    ENABLE_POSE,
+)
 print(f"Initializing detector: {DETECTOR_TYPE}...")
 print(f"Model: {MODEL_NAME}")
-# Enable pose estimation for drowning detection
-ENABLE_POSE = os.getenv("ENABLE_POSE", "true").lower() == "true"
+print(f"Inference imgsz={INFERENCE_IMGSZ} frame_skip={FRAME_SKIP} pose={ENABLE_POSE}")
 
 if DETECTOR_TYPE == "roboflow":
     detector = Detector(
@@ -110,7 +118,10 @@ if ENABLE_POSE:
     print("✅ Pose estimation enabled for drowning detection")
 
 print("Initializing person tracker...")
-tracker = PersonTracker()
+tracker = PersonTracker(
+    max_staleness=MAX_STALENESS,
+    iou_threshold=TRACKER_IOU_THRESHOLD,
+)
 
 print("Initializing behavior analyzer...")
 behavior_analyzer = BehaviorAnalyzer()
@@ -138,6 +149,11 @@ if not beach_calibration.load_profile(calibration_file):
 print("Initializing intelligent alert system...")
 alert_engine = AlertEngine()
 print("✅ Alert engine ready with hysteresis and throttling")
+
+ingest_client = None
+if SEND_TO_BACKEND:
+    ingest_client = AsyncIngestClient(f"{BACKEND_URL}/api/data/ingest")
+    print(f"Ingest client posting to {BACKEND_URL}/api/data/ingest (non-blocking)")
 
 # Water analyzer will be initialized after we get first frame
 water_analyzer = None
@@ -244,7 +260,9 @@ try:
             # ⚡ PERFORMANCE: Conditional multi-scale detection
             if isinstance(yolo_model, Detector):
                 # First pass: normal confidence
-                raw_detections = yolo_model.detect_people(frame, conf_thres=0.5)
+                raw_detections = yolo_model.detect_people(
+                    frame, conf_thres=CONF_THRESHOLD, iou_thres=IOU_THRESHOLD
+                )
                 
                 # Second pass: ONLY if multi-scale is enabled (slow but catches far swimmers)
                 if MULTI_SCALE_DETECTION:
@@ -281,7 +299,7 @@ try:
                         filtered_detections.append(det)
                 raw_detections = filtered_detections
             else:
-                raw_detections = detect_people(yolo_model, frame, conf_thres=0.5)
+                raw_detections = detect_people(yolo_model, frame, conf_thres=CONF_THRESHOLD, iou_thres=IOU_THRESHOLD)
             # Format: [(x1, y1, x2, y2, conf), ...]
             
             # --- b.1 Apply filters to improve accuracy ---
@@ -319,6 +337,13 @@ try:
             
             if motion_metrics and motion_metrics.pattern in [MovementPattern.STATIONARY, MovementPattern.ERRATIC]:
                 quick_risk += 25
+
+            class_floor, _class_factor, _floor_value = apply_class_floor(
+                0.0,
+                getattr(person, "class_name", None),
+                getattr(person, "confidence", 1.0),
+            )
+            quick_risk = max(quick_risk, class_floor)
             
             quick_risk_scores[person.track_id] = quick_risk
             
@@ -456,7 +481,9 @@ try:
                 motion_metrics,
                 distance_from_shore,
                 frame_timestamp,
-                pose_risk_override=final_risk_override
+                pose_risk_override=final_risk_override,
+                detection_class=getattr(person, "class_name", None),
+                detection_confidence=float(getattr(person, "confidence", 1.0)),
             )
             
             # 🚨 NEW: Use intelligent alert engine (with hysteresis & throttling)
@@ -488,8 +515,6 @@ try:
         # --- c.1 Send data to backend API (every N frames) ---
         if SEND_TO_BACKEND and frame_idx % BACKEND_SEND_INTERVAL == 0:
             try:
-                from datetime import datetime
-                
                 # Build swimmers list in FrameResult format
                 swimmers_data = []
                 for person in tracked_people:
@@ -514,6 +539,7 @@ try:
                             "h": int(y2 - y1)
                         },
                         "confidence": float(person.confidence),
+                        "detection_class": getattr(person, "class_name", None),
                         "risk_score": int(risk_score.total_score) if risk_score else 0,
                         "risk_level": risk_score.level.value.upper() if risk_score else "LOW",
                         "behavior": pattern.value.upper() if pattern else "NORMAL",
@@ -573,21 +599,17 @@ try:
                     "system_mode": SYSTEM_MODE
                 }
                 
-                response = requests.post(
-                    f"{BACKEND_URL}/api/data/ingest",
-                    json=payload,
-                    timeout=1.0  # Don't block if backend is slow
-                )
-                if response.status_code == 200:
-                    if frame_idx % 30 == 0:  # Log every 30 frames
-                        print(f"✅ Sent FrameResult: {len(swimmers_data)} swimmers, {FRAME_SHAPE[1]}x{FRAME_SHAPE[0]} (Frame {frame_idx})")
-            except requests.exceptions.ConnectionError:
-                if frame_idx == 0 or frame_idx % 60 == 0:  # Warn on first frame and every 60 frames
-                    print(f"⚠️  Backend not reachable at {BACKEND_URL}")
-                    print(f"   Make sure backend is running: cd backend && python -m app.main")
+                if ingest_client is not None:
+                    ingest_client.submit(payload)
+                    if frame_idx % 30 == 0:
+                        print(
+                            f"✅ Queued FrameResult: {len(swimmers_data)} swimmers, "
+                            f"{FRAME_SHAPE[1]}x{FRAME_SHAPE[0]} (Frame {frame_idx}, "
+                            f"sent={ingest_client.sent} dropped={ingest_client.dropped})"
+                        )
             except Exception as e:
-                if frame_idx % 60 == 0:  # Only log errors occasionally
-                    print(f"⚠️  Failed to send to backend: {e}")
+                if frame_idx % 60 == 0:
+                    print(f"⚠️  Failed to queue backend payload: {e}")
 
         # --- d. Update heatmap ---
         heatmap_acc.update(tracked_people, frame_idx)
@@ -855,11 +877,13 @@ try:
                     frame_timestamp
                 ])
 
-        # FPS control: keep up to OUTPUT_FPS
-        key = cv2.waitKey(int(1000 // OUTPUT_FPS)) & 0xFF
-        if key == 27 or key == ord('q'):
-            print("Exiting main loop.")
-            break
+        # Pace the preview window only. Headless upload used to wait 100 ms
+        # per processed frame (OUTPUT_FPS=10) even when no window was open.
+        if SHOW_WINDOW:
+            key = cv2.waitKey(int(1000 / max(OUTPUT_FPS, 1))) & 0xFF
+            if key == 27 or key == ord('q'):
+                print("Exiting main loop.")
+                break
 
         frame_idx += 1
 
@@ -867,6 +891,12 @@ except KeyboardInterrupt:
     print("Interrupted. Exiting...")
 
 finally:
+    if ingest_client is not None:
+        print(
+            f"Ingest stats: sent={ingest_client.sent} failed={ingest_client.failed} "
+            f"dropped={ingest_client.dropped}"
+        )
+        ingest_client.close()
     if use_rtsp:
         video_stream.stop()
     else:
